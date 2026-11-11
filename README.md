@@ -321,9 +321,9 @@ tests/
 
 ## Integrantes e contribuições
 
-- **Integrante:** [preencher] — **Contribuição:** [preencher]
-- **Integrante:** [preencher] — **Contribuição:** [preencher]
-- **Integrante:** [preencher] — **Contribuição:** [preencher]
+- **Integrante:** Alexander — **Contribuição:** Dados
+- **Integrante:** Geovanna — **Contribuição:** Relatório e apresentação
+- **Integrante:** Thercio — **Contribuição:** Frontend
 
 ## Referências
 
