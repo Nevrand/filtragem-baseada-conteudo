@@ -62,10 +62,10 @@ def coerce_ingredient_list(value) -> List[str]:
     """Converte listas, strings e estruturas semelhantes para lista de ingredientes."""
     if value is None:
         return []
-    if isinstance(value, (list, tuple, set)):
-        items = list(value)
-    elif isinstance(value, np.ndarray):
+    if isinstance(value, np.ndarray):
         items = value.tolist()
+    elif isinstance(value, (list, tuple, set)):
+        items = list(value)
     else:
         items = [value]
 
@@ -79,50 +79,52 @@ def coerce_ingredient_list(value) -> List[str]:
     return cleaned
 
 
-def parse_duration_to_minutes(value) -> int | None:
-    """Converte duração ISO 8601 ou textos em minutos.
+def parse_duration_to_minutes(value) -> float | None:
+    """Converte duração ISO 8601 ou texto simples em minutos.
 
-    Exemplo: "PT24H45M" -> 1485. Textos como "45 min" ou "1 hour 30 mins" também
-    são aceitos. Valores ausentes são retornados como None para não serem tratados
-    como zero.
+    Durações ausentes/inválidas retornam ``None``. Segundos são preservados como
+    frações de minuto e durações ISO com dias (por exemplo, ``P1DT2H``) são aceitas.
     """
-    if pd.isna(value):
+    if value is None or _is_missing_scalar(value):
         return None
     if isinstance(value, (int, float)):
-        if pd.isna(value):
-            return None
-        return int(value)
+        return float(value)
 
     text = str(value).strip().upper()
     if not text:
         return None
 
-    iso_match = re.match(r"^PT(?:(?P<days>\d+)D)?(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?$", text)
+    iso_match = re.fullmatch(
+        r"P(?:(?P<days>\d+(?:\.\d+)?)D)?"
+        r"(?:T(?:(?P<hours>\d+(?:\.\d+)?)H)?"
+        r"(?:(?P<minutes>\d+(?:\.\d+)?)M)?"
+        r"(?:(?P<seconds>\d+(?:\.\d+)?)S)?)?",
+        text,
+    )
     if iso_match:
-        days = int(iso_match.group("days") or 0)
-        hours = int(iso_match.group("hours") or 0)
-        minutes = int(iso_match.group("minutes") or 0)
-        seconds = int(iso_match.group("seconds") or 0)
-        return days * 24 * 60 + hours * 60 + minutes + seconds / 60
+        parts = iso_match.groupdict()
+        if not any(parts.values()):
+            return None
+        return (
+            float(parts["days"] or 0) * 24 * 60
+            + float(parts["hours"] or 0) * 60
+            + float(parts["minutes"] or 0)
+            + float(parts["seconds"] or 0) / 60
+        )
 
     if re.search(r"\d", text):
-        values = re.findall(r"(\d+)", text)
+        values = re.findall(r"(\d+(?:\.\d+)?)", text)
         if not values:
             return None
-        total = 0
-        if "H" in text:
-            total += int(values[0]) * 60
-            if len(values) > 1:
-                total += int(values[1])
-            return total
-        if "M" in text:
-            return int(values[0])
-        if "D" in text:
-            return int(values[0]) * 24 * 60
-        if len(values) >= 2 and any(unit in text for unit in ["MIN", "MINUTES", "MINS"]):
-            return int(values[0])
-        if len(values) == 1:
-            return int(values[0])
+        if re.search(r"\b(?:HOUR|HOURS|HR|HRS)\b", text):
+            return float(values[0]) * 60 + (float(values[1]) if len(values) > 1 else 0)
+        if re.search(r"\b(?:DAY|DAYS)\b", text):
+            return float(values[0]) * 24 * 60
+        if re.search(r"\b(?:SECOND|SECONDS|SEC|SECS)\b", text):
+            return float(values[0]) / 60
+        if re.search(r"\b(?:MINUTE|MINUTES|MIN|MINS)\b", text):
+            return float(values[0])
+        return float(values[0])
 
     return None
 

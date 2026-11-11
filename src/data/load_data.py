@@ -24,6 +24,15 @@ def _validate_columns(frame: pd.DataFrame, required: Iterable[str]) -> None:
         raise ValueError(f"Colunas obrigatórias ausentes: {missing}. Colunas disponíveis: {list(frame.columns)}")
 
 
+def _available_columns(path: Path, requested: tuple[str, ...] | None) -> list[str] | None:
+    if requested is None:
+        return None
+    import pyarrow.parquet as parquet
+
+    available = set(parquet.read_schema(path).names)
+    return [column for column in requested if column in available]
+
+
 @lru_cache(maxsize=1)
 def load_datasets(
     recipe_path: str | Path | None = None,
@@ -38,6 +47,8 @@ def load_datasets(
         "TotalTime",
     ),
     review_required: tuple[str, ...] = ("RecipeId", "AuthorId", "Rating"),
+    recipe_columns: tuple[str, ...] | None = None,
+    review_columns: tuple[str, ...] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Carrega receitas e avaliações do dataset Parquet.
 
@@ -52,25 +63,26 @@ def load_datasets(
     reviews = pd.DataFrame()
 
     if recipe_file.exists():
-        recipes = pd.read_parquet(recipe_file)
+        recipes = pd.read_parquet(recipe_file, columns=_available_columns(recipe_file, recipe_columns))
         _validate_columns(recipes, recipe_required)
     else:
         print(f"Arquivo de receitas não encontrado: {recipe_file}")
 
     if review_file.exists():
-        reviews = pd.read_parquet(review_file)
+        reviews = pd.read_parquet(review_file, columns=_available_columns(review_file, review_columns))
         _validate_columns(reviews, review_required)
     else:
         print(f"Arquivo de avaliações não encontrado: {review_file}")
 
     if not recipes.empty:
         recipes = recipes.copy()
-        recipes["RecipeId"] = pd.to_numeric(recipes["RecipeId"], errors="coerce")
+        if "RecipeId" in recipes.columns:
+            recipes["RecipeId"] = pd.to_numeric(recipes["RecipeId"], errors="coerce")
     if not reviews.empty:
         reviews = reviews.copy()
-        reviews["RecipeId"] = pd.to_numeric(reviews["RecipeId"], errors="coerce")
-        reviews["AuthorId"] = pd.to_numeric(reviews["AuthorId"], errors="coerce")
-        reviews["Rating"] = pd.to_numeric(reviews["Rating"], errors="coerce")
+        for column in ("RecipeId", "AuthorId", "Rating"):
+            if column in reviews.columns:
+                reviews[column] = pd.to_numeric(reviews[column], errors="coerce")
 
     return recipes, reviews
 

@@ -17,8 +17,10 @@ def build_user_profile(
 ) -> tuple[np.ndarray | None, pd.DataFrame]:
     """Cria um perfil textual para um usuário a partir do histórico de avaliações.
 
-    A estratégia adota pesos angulares: avaliações positivas elevam a importância dos
-    termos, avaliações negativas reduzem, e avaliações neutras têm efeito menor.
+    A nota 0, presente no arquivo real apesar da escala usual de 1 a 5, é tratada
+    como a menor avaliação (-2). Notas 1-5 recebem pesos -2, -1, 0, +1 e +2.
+    Avaliações repetidas do mesmo usuário para a mesma receita são agregadas pela
+    média antes da ponderação, evitando contar a mesma receita várias vezes.
     """
     if reviews_df.empty or recipes_df.empty:
         return None, pd.DataFrame()
@@ -27,31 +29,44 @@ def build_user_profile(
     if merged.empty:
         return None, pd.DataFrame()
 
-    merged["score_weight"] = merged["Rating"].apply(
-        lambda rating: (
-            rating_weight if rating >= positive_threshold else
-            0.25 if rating <= neutral_threshold else
-            0.0
+    if "AuthorId" in merged.columns:
+        merged = merged.groupby(["AuthorId", "RecipeId"], as_index=False, dropna=False).agg(
+            Rating=("Rating", "mean"),
+            combined_text=("combined_text", "first"),
         )
-    )
-    merged = merged[merged["score_weight"] > 0].copy()
-    if merged.empty:
-        return None, pd.DataFrame()
-
-    user_vector = None
-    for _, row in merged.iterrows():
-        recipe_vector = tfidf_builder.get_vector_for_recipe(row["RecipeId"])
-        weight = float(row["score_weight"])
-        weighted_vector = recipe_vector * weight
-        if user_vector is None:
-            user_vector = weighted_vector.copy()
-        else:
-            user_vector += weighted_vector
-
-    if user_vector is None:
+    else:
+        merged = merged.groupby("RecipeId", as_index=False, dropna=False).agg(
+            Rating=("Rating", "mean"),
+            combined_text=("combined_text", "first"),
+        )
+    if len(merged) < min_history:
         return None, merged
 
-    user_vector = user_vector / (np.linalg.norm(user_vector) + 1e-12)
+    def weight_for_rating(rating: float) -> float:
+        if pd.isna(rating) or rating == 3:
+            return 0.0
+        if rating >= positive_threshold:
+            return rating_weight if rating >= 5 else 1.0
+        if rating <= 0:
+            return -2.0
+        if rating <= neutral_threshold:
+            return -2.0 if rating <= 1 else -1.0
+        return 0.0
+
+    merged["score_weight"] = merged["Rating"].apply(weight_for_rating)
+    weighted_history = merged[merged["score_weight"] != 0].copy()
+    if weighted_history.empty or len(weighted_history) < min_history:
+        return None, merged
+
+    weighted_vectors = [
+        tfidf_builder.get_vector_for_recipe(row.RecipeId) * float(row.score_weight)
+        for row in weighted_history.itertuples(index=False)
+    ]
+    user_vector = np.sum(weighted_vectors, axis=0)
+    norm = float(np.linalg.norm(user_vector))
+    if norm <= 1e-12:
+        return None, merged
+    user_vector /= norm
     return user_vector, merged
 
 

@@ -11,6 +11,17 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from src.recommendation.similarity import cosine_similarity
 
 
+def recipe_id_key(recipe_id: Any) -> str:
+    """Normaliza IDs numéricos equivalentes, como 38 e 38.0, para a chave do modelo."""
+    try:
+        numeric_id = float(recipe_id)
+        if np.isfinite(numeric_id) and numeric_id.is_integer():
+            return str(int(numeric_id))
+    except (TypeError, ValueError):
+        pass
+    return str(recipe_id)
+
+
 @dataclass
 class TextFeatureBuilder:
     """Empacota a criação e reutilização do espaço TF-IDF das receitas."""
@@ -54,8 +65,8 @@ class TextFeatureBuilder:
         )
         self.matrix = self.vectorizer.fit_transform(working_df[self.text_column].fillna("").astype(str))
         self.feature_names = self.vectorizer.get_feature_names_out().tolist()
-        self.recipe_ids = working_df[self.recipe_id_column].astype(str).tolist()
-        self.index_by_id = {str(recipe_id): idx for idx, recipe_id in enumerate(self.recipe_ids)}
+        self.recipe_ids = working_df[self.recipe_id_column].tolist()
+        self.index_by_id = {recipe_id_key(recipe_id): idx for idx, recipe_id in enumerate(self.recipe_ids)}
         return self
 
     def transform(self, recipes_df: pd.DataFrame, text_field: str | None = None) -> sparse.csr_matrix:
@@ -73,7 +84,7 @@ class TextFeatureBuilder:
         """Retorna o vetor TF-IDF de uma receita específica."""
         if self.matrix is None or self.index_by_id is None:
             raise ValueError("A matriz TF-IDF ainda não foi construída.")
-        key = str(recipe_id)
+        key = recipe_id_key(recipe_id)
         if key not in self.index_by_id:
             raise KeyError(f"Receita {recipe_id} não foi encontrada no índice TF-IDF.")
         return self.matrix[self.index_by_id[key]].toarray().ravel()
@@ -110,4 +121,4 @@ def build_tfidf_matrix(
     return builder.fit(recipes_df, text_field=text_field)
 
 
-__all__ = ["TextFeatureBuilder", "build_tfidf_matrix"]
+__all__ = ["TextFeatureBuilder", "build_tfidf_matrix", "recipe_id_key"]

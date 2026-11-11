@@ -1,10 +1,38 @@
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from typing import Sequence
 
 import pandas as pd
 
-from src.data.preprocess import parse_duration_to_minutes
+from src.data.preprocess import coerce_ingredient_list, normalize_text, parse_duration_to_minutes
+
+
+def _ingredient_terms(value) -> list[tuple[str, ...]]:
+    """Converte ingredientes em sequências de palavras normalizadas."""
+    return [
+        tuple(normalized.split())
+        for item in coerce_ingredient_list(value)
+        if (normalized := normalize_text(item))
+    ]
+
+
+def _contains_ingredient(ingredients, query_terms: set[tuple[str, ...]]) -> bool:
+    for ingredient in _ingredient_terms(ingredients):
+        for query in query_terms:
+            if not query:
+                continue
+            width = len(query)
+            if any(ingredient[index:index + width] == query for index in range(len(ingredient) - width + 1)):
+                return True
+    return False
+
+
+def _query_terms(values: Sequence[str] | None) -> set[tuple[str, ...]]:
+    return {
+        tuple(normalized.split())
+        for value in (values or [])
+        if (normalized := normalize_text(value))
+    }
 
 
 def filter_seen_recipes(candidate_df: pd.DataFrame, user_ratings: pd.DataFrame | None, recipe_id_column: str = "RecipeId") -> pd.DataFrame:
@@ -23,43 +51,39 @@ def filter_by_avoid_ingredients(candidate_df: pd.DataFrame, prohibited_ingredien
     """Remove receitas com ingredientes proibidos pelo usuário."""
     if candidate_df.empty or not prohibited_ingredients:
         return candidate_df.copy()
-    forbidden = {str(item).strip().lower() for item in prohibited_ingredients if str(item).strip()}
+    forbidden = _query_terms(prohibited_ingredients)
     if not forbidden:
         return candidate_df.copy()
 
     def has_forbidden(row):
-        ingredients = row.get(ingredient_column, [])
-        if isinstance(ingredients, str):
-            ingredients = [ingredients]
-        normalized = {str(item).strip().lower() for item in ingredients if str(item).strip()}
-        return bool(normalized.intersection(forbidden))
+        return _contains_ingredient(row.get(ingredient_column, []), forbidden)
 
     return candidate_df[~candidate_df.apply(has_forbidden, axis=1)].copy()
 
 
 def filter_by_time(candidate_df: pd.DataFrame, max_minutes: float | int | None, time_column: str = "TotalTime", fallback_column: str | None = None) -> pd.DataFrame:
-    """Remove receitas acima do tempo máximo.
+    """Remove receitas acima do limite e receitas sem tempo conhecido.
 
-    Quando a coluna TotalTime não estiver disponível, usa fallback_column como alternativa.
+    ``TotalTime`` é prioritário. Para linhas sem esse valor, ``PrepTime`` e
+    ``CookTime`` só são somados quando ambos puderem ser convertidos.
     """
     if candidate_df.empty or max_minutes is None:
         return candidate_df.copy()
 
-    if time_column not in candidate_df.columns:
-        if fallback_column is None or fallback_column not in candidate_df.columns:
-            return candidate_df.copy()
-        time_column = fallback_column
-
     def safe_minutes(row):
-        value = row.get(time_column)
-        minutes = parse_duration_to_minutes(value)
-        if minutes is None:
-            return None
+        minutes = parse_duration_to_minutes(row.get(time_column)) if time_column in row.index else None
+        if minutes is None and {"PrepTime", "CookTime"}.issubset(row.index):
+            prep = parse_duration_to_minutes(row.get("PrepTime"))
+            cook = parse_duration_to_minutes(row.get("CookTime"))
+            if prep is not None and cook is not None:
+                minutes = prep + cook
+        if minutes is None and fallback_column and fallback_column in row.index:
+            minutes = parse_duration_to_minutes(row.get(fallback_column))
         return minutes
 
     candidate_df = candidate_df.copy()
     candidate_df["_minutes"] = candidate_df.apply(safe_minutes, axis=1)
-    candidate_df = candidate_df[candidate_df["_minutes"].isna() | (candidate_df["_minutes"] <= float(max_minutes))].copy()
+    candidate_df = candidate_df[candidate_df["_minutes"].notna() & (candidate_df["_minutes"] <= float(max_minutes))].copy()
     return candidate_df.drop(columns=["_minutes"], errors="ignore")
 
 
@@ -67,16 +91,12 @@ def filter_by_available_ingredients(candidate_df: pd.DataFrame, available_ingred
     """Opção extra: mantém receitas que usam pelo menos um ingrediente disponível em casa."""
     if candidate_df.empty or not available_ingredients:
         return candidate_df.copy()
-    wanted = {str(item).strip().lower() for item in available_ingredients if str(item).strip()}
+    wanted = _query_terms(available_ingredients)
     if not wanted:
         return candidate_df.copy()
 
     def contains_any(row):
-        ingredients = row.get(ingredient_column, [])
-        if isinstance(ingredients, str):
-            ingredients = [ingredients]
-        normalized = {str(item).strip().lower() for item in ingredients if str(item).strip()}
-        return bool(normalized.intersection(wanted))
+        return _contains_ingredient(row.get(ingredient_column, []), wanted)
 
     return candidate_df[candidate_df.apply(contains_any, axis=1)].copy()
 
