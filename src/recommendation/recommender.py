@@ -130,7 +130,8 @@ class RecipeRecommender:
 
         history = self._ensure_user_ratings()
         if not history.empty and "Rating" in history.columns:
-            positive_history = history[history["Rating"] >= 4]
+            ratings = pd.to_numeric(history["Rating"], errors="coerce")
+            positive_history = history.loc[ratings.between(4, 5)]
             history_positions = [
                 self.tfidf_builder.index_by_id.get(recipe_id_key(history_id))
                 for history_id in positive_history["RecipeId"]

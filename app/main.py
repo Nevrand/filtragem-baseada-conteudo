@@ -95,6 +95,12 @@ if recipes.empty or reviews.empty:
     st.stop()
 
 review_counts = reviews.groupby("AuthorId").size()
+numeric_ratings = pd.to_numeric(reviews["Rating"], errors="coerce")
+valid_rating_counts = (
+    reviews.assign(_valid_rating=numeric_ratings.between(1, 5))
+    .groupby("AuthorId")["_valid_rating"]
+    .sum()
+)
 minimum_user_history = 50
 user_options = review_counts[review_counts >= minimum_user_history].sort_values(ascending=False).index.tolist()
 if not user_options:
@@ -102,18 +108,28 @@ if not user_options:
     st.stop()
 
 st.caption(
-    f"O seletor inclui todos os usuários com pelo menos {minimum_user_history} avaliações; "
+    f"O seletor inclui todos os usuários com pelo menos {minimum_user_history} interações; "
     "esse critério reduz opções com histórico insuficiente sem limitar a lista aos primeiros IDs."
 )
 selected_user = st.selectbox(
     "Usuário",
     user_options,
-    format_func=lambda user_id: f"{user_id} ({int(review_counts.loc[user_id])} avaliações)",
+    format_func=lambda user_id: (
+        f"{user_id} ({int(review_counts.loc[user_id])} interações; "
+        f"{int(valid_rating_counts.loc[user_id])} avaliações por estrelas)"
+    ),
 )
 user_reviews = reviews[reviews["AuthorId"] == selected_user].copy()
-user_mean = float(user_reviews["Rating"].mean())
+user_ratings = pd.to_numeric(user_reviews["Rating"], errors="coerce")
+valid_user_ratings = user_ratings[user_ratings.between(1, 5)]
+user_mean = float(valid_user_ratings.mean()) if not valid_user_ratings.empty else None
 st.subheader("Histórico")
-st.write(f"**{len(user_reviews)} avaliações** · nota média **{user_mean:.2f}**")
+average_text = f"{user_mean:.2f}" if user_mean is not None else "sem avaliações válidas"
+st.write(
+    f"**{len(user_reviews)} interações** · "
+    f"**{len(valid_user_ratings)} avaliações por estrelas** · "
+    f"média **{average_text}**"
+)
 
 history_columns = ["RecipeId", "Rating"]
 if "DateSubmitted" in user_reviews.columns:
@@ -123,6 +139,16 @@ history = user_reviews[history_columns].merge(
     on="RecipeId",
     how="left",
 )
+history["_rating_sort"] = pd.to_numeric(history["Rating"], errors="coerce")
+history["Rating"] = pd.to_numeric(history["Rating"], errors="coerce").map(
+    lambda rating: (
+        "Sem avaliação por estrelas"
+        if rating == 0
+        else rating
+        if pd.notna(rating) and 1 <= rating <= 5
+        else "Nota inválida"
+    )
+)
 history["Ingredients"] = history["RecipeIngredientParts"].map(
     lambda value: ", ".join(coerce_ingredient_list(value))
 )
@@ -130,7 +156,10 @@ history = history.rename(columns={"Name": "Recipe", "Rating": "Rating"})
 display_columns = ["Recipe", "Rating", "Ingredients"]
 if "DateSubmitted" in history.columns:
     display_columns.append("DateSubmitted")
-st.dataframe(history[display_columns].sort_values("Rating", ascending=False), use_container_width=True)
+st.dataframe(
+    history.sort_values("_rating_sort", ascending=False, na_position="last")[display_columns],
+    use_container_width=True,
+)
 
 with st.sidebar:
     st.header("Preferências e filtros")

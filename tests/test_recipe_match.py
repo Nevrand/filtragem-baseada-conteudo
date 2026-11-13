@@ -12,10 +12,10 @@ from src.evaluation.baselines import popularity_recommendation, random_recommend
 from src.evaluation.evaluate import evaluate_user_recommendations, summarize_user_results
 from src.evaluation.metrics import catalog_coverage, ndcg_at_k, precision_at_k, recall_at_k
 from src.evaluation.qualitative_analysis import run_qualitative_analysis
-from src.evaluation.run_experiments import run_experiments
+from src.evaluation.run_experiments import _relevant_test_items, run_experiments
 from src.evaluation.split import split_reviews_by_user
 from src.features.text_features import build_tfidf_matrix
-from src.features.user_profile import build_user_profile
+from src.features.user_profile import build_user_profile, summarize_user_history
 from src.recommendation.filters import filter_by_avoid_ingredients, filter_by_available_ingredients, filter_by_time, filter_seen_recipes
 from src.recommendation.recommender import RecipeRecommender
 from src.recommendation.similarity import cosine_similarity
@@ -202,7 +202,7 @@ class _VectorLookup:
 
 @pytest.mark.parametrize(
     ("rating", "expected_weight"),
-    [(5, 2.0), (4, 1.0), (3, 0.0), (2, -1.0), (1, -2.0), (0, -2.0)],
+    [(5, 2.0), (4, 1.0), (3, 0.0), (2, -1.0), (1, -2.0), (0, 0.0)],
 )
 def test_profile_uses_signed_rating_weights(rating, expected_weight):
     recipes = pd.DataFrame({"RecipeId": [1], "combined_text": ["tomato"]})
@@ -226,6 +226,48 @@ def test_duplicate_user_recipe_ratings_are_averaged():
     assert profile is None
     assert history["Rating"].tolist() == [3.0]
     assert history["score_weight"].tolist() == [0.0]
+
+
+def test_unrated_interaction_does_not_change_profile_and_remains_in_history():
+    recipes = pd.DataFrame({
+        "RecipeId": [1, 2, 3],
+        "combined_text": ["tomato", "banana", "rice"],
+    })
+    rated = pd.DataFrame({"AuthorId": [9], "RecipeId": [1], "Rating": [5]})
+    with_unrated = pd.DataFrame({
+        "AuthorId": [9, 9, 9, 9],
+        "RecipeId": [1, 2, 3, 3],
+        "Rating": [5, 0, 6, None],
+    })
+    lookup = _VectorLookup({1: [1.0, 0.0], 2: [0.0, 1.0], 3: [-1.0, 0.0]})
+
+    original_profile, _ = build_user_profile(rated, recipes, lookup)
+    profile, history = build_user_profile(with_unrated, recipes, lookup)
+    zero_only_profile, zero_history = build_user_profile(
+        with_unrated.iloc[[1]], recipes, lookup
+    )
+
+    assert profile.tolist() == original_profile.tolist()
+    assert history.loc[history["RecipeId"] == 2, "score_weight"].item() == 0
+    assert history.loc[history["RecipeId"] == 2, "Rating"].item() == 0
+    invalid_history = history.loc[history["RecipeId"] == 3].iloc[0]
+    assert pd.isna(invalid_history["Rating"])
+    assert invalid_history["valid_rating_count"] == 0
+    assert invalid_history["score_weight"] == 0
+    assert zero_only_profile is None
+    assert zero_history["interaction_count"].tolist() == [1]
+
+
+def test_history_summary_ignores_zero_in_average_and_negative_count():
+    summary = summarize_user_history(pd.DataFrame({
+        "Rating": [0, 1, 2, 4, 5, None, 6],
+    }))
+
+    assert summary["interaction_count"] == 7
+    assert summary["valid_rating_count"] == 4
+    assert summary["average_rating"] == 3.0
+    assert summary["negative"] == 2
+    assert summary["positive"] == 2
 
 
 def test_profile_cancels_to_none_when_positive_and_negative_vectors_cancel():
@@ -267,6 +309,29 @@ def test_chronological_split_never_splits_equal_timestamps_between_train_and_tes
 
     assert train_dates.max() < test_dates.min()
     assert set(train["RecipeId"]).isdisjoint(test["RecipeId"])
+
+
+def test_repeated_user_recipe_pairs_are_consolidated_before_split():
+    reviews = pd.DataFrame({
+        "AuthorId": [1, 1, 1, 1, 1],
+        "RecipeId": [10, 10, 20, 30, 40],
+        "Rating": [5, 1, 0, 4, 5],
+        "DateSubmitted": [
+            "invalid", "2024-01-03", "2024-01-02", "2024-01-04", "2024-01-05",
+        ],
+    })
+    train, test = split_reviews_by_user(reviews, test_fraction=0.5)
+
+    train_pairs = set(zip(train["AuthorId"], train["RecipeId"]))
+    test_pairs = set(zip(test["AuthorId"], test["RecipeId"]))
+    assert train_pairs.isdisjoint(test_pairs)
+    assert len(train) + len(test) == 4
+    assert 10 in set(train["RecipeId"])
+    assert 40 in set(test["RecipeId"])
+    consolidated = pd.concat([train, test]).set_index("RecipeId")
+    assert consolidated.loc[10, "Rating"] == 3
+    assert consolidated.loc[10, "DateSubmitted"] == "2024-01-03"
+    assert consolidated.loc[20, "Rating"] == 0
 
 
 def test_invalid_dates_fall_back_to_reproducible_random_split():
@@ -316,7 +381,10 @@ def test_users_without_relevant_test_ratings_are_reported_but_excluded_from_mean
 
 
 def test_baselines_use_only_candidates_and_exclude_training_history(sample_recipes):
-    train = pd.DataFrame({"RecipeId": [1, 2, 2, 2, 3, 3]})
+    train = pd.DataFrame({
+        "RecipeId": [1, 2, 2, 2, 3, 3],
+        "Rating": [5, 5, 4, 3, 5, 4],
+    })
     candidates = sample_recipes.copy()
     random_ids = random_recommendation(candidates, user_id=20, top_n=4, random_state=42, train_reviews=train)
     repeat_random_ids = random_recommendation(candidates, user_id=20, top_n=4, random_state=42, train_reviews=train)
@@ -325,6 +393,62 @@ def test_baselines_use_only_candidates_and_exclude_training_history(sample_recip
     assert random_ids == repeat_random_ids
     assert not set(random_ids).intersection({1, 2, 3})
     assert popular_ids == [4]
+
+
+def test_popularity_counts_valid_star_ratings_and_zero_still_marks_seen(sample_recipes):
+    training = pd.DataFrame({
+        "RecipeId": [1, 1, 1, 2],
+        "Rating": [0, 0, 0, 5],
+    })
+    candidates = sample_recipes[sample_recipes["RecipeId"].isin([1, 2, 3])]
+
+    ranked = popularity_recommendation(training, candidates, top_n=3)
+    excluded = popularity_recommendation(
+        training,
+        candidates,
+        top_n=3,
+        train_reviews=training[training["RecipeId"].eq(1)],
+    )
+    random_excluded = random_recommendation(
+        candidates,
+        user_id=4,
+        top_n=3,
+        train_reviews=training[training["RecipeId"].eq(1)],
+    )
+
+    assert ranked[:2] == [2, 1]
+    assert 1 not in excluded
+    assert 1 not in random_excluded
+
+
+def test_relevant_test_items_exclude_missing_catalog_and_seen_training_items():
+    test = pd.DataFrame({
+        "RecipeId": [1, 2, 99, 3],
+        "Rating": [5, 4, 5, 0],
+    })
+    count, in_catalog, outside, seen, eligible = _relevant_test_items(
+        test,
+        catalog_ids={1, 2, 3},
+        seen_ids={1},
+    )
+    metrics = evaluate_user_recommendations(
+        7,
+        pd.DataFrame({"AuthorId": [7], "RecipeId": [99], "Rating": [5]}),
+        [2],
+        relevant_items=eligible,
+    )
+
+    assert count == 3
+    assert in_catalog == {1, 2}
+    assert outside == {99}
+    assert seen == {1}
+    assert eligible == {2}
+    assert metrics["n_relevant"] == 1
+    assert metrics["recall@5"] == 1.0
+
+
+def test_catalog_coverage_is_a_fraction():
+    assert catalog_coverage([[1]], total_items=2) == 0.5
 
 
 def test_ingredient_filters_use_full_words_for_avoid_and_available():
@@ -427,10 +551,12 @@ def test_experiment_runner_exports_results_without_test_profile_leakage(tmp_path
         "RecipeIngredientParts": [["tomato", "pasta"], ["chicken", "lettuce"], ["rice", "beans"], ["tomato", "basil"], ["beans", "onion"], ["banana", "milk"]],
     })
     reviews = pd.DataFrame({
-        "AuthorId": [10] * 4 + [20] * 4,
-        "RecipeId": [1, 2, 3, 4, 2, 5, 6, 1],
-        "Rating": [5, 4, 4, 5, 5, 4, 4, 5],
+        "AuthorId": [10] * 4 + [20] * 4 + [30] * 4 + [40] * 4,
+        "RecipeId": [1, 2, 3, 4, 2, 5, 6, 1, 3, 4, 5, 6, 6, 5, 4, 3],
+        "Rating": [5, 4, 4, 5, 5, 4, 4, 5, 2, 4, 4, 5, 5, 4, 2, 5],
         "DateSubmitted": pd.to_datetime([
+            "2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04",
+            "2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04",
             "2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04",
             "2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04",
         ]),
@@ -456,6 +582,18 @@ def test_experiment_runner_exports_results_without_test_profile_leakage(tmp_path
     assert (output_dir / "metrics_by_user.csv").exists()
     assert json.loads((output_dir / "evaluation_config.json").read_text())["users_selected"] == 2
     assert json.loads((output_dir / "dataset_summary.json").read_text())["test_review_count"] == 2
+    assert (output_dir / "selected_users.csv").exists()
+
+    repeated_output = tmp_path / "repeated-results"
+    run_experiments(
+        recipe_path=recipe_path,
+        review_path=review_path,
+        output_dir=repeated_output,
+        max_users=2,
+    )
+    selected = pd.read_csv(output_dir / "selected_users.csv")["user_id"].tolist()
+    selected_again = pd.read_csv(repeated_output / "selected_users.csv")["user_id"].tolist()
+    assert selected == selected_again
 
 
 def test_dataset_report_exports_real_dataframe_statistics(tmp_path, sample_recipes, sample_reviews):
@@ -467,6 +605,27 @@ def test_dataset_report_exports_real_dataframe_statistics(tmp_path, sample_recip
     assert (tmp_path / "rating_distribution.csv").exists()
     assert (tmp_path / "dataset_missing_values.csv").exists()
     assert (tmp_path / "top_categories.csv").exists()
+
+
+def test_dataset_report_separates_interactions_and_valid_ratings(tmp_path, sample_recipes):
+    reviews = pd.DataFrame({
+        "ReviewId": [1, 2, 3, 4, 5, 6, 7],
+        "RecipeId": [1, 1, 2, 2, 3, 3, 4],
+        "AuthorId": [1] * 7,
+        "Rating": [0, 1, 3, 5, None, 6, 4],
+    })
+
+    report = build_dataset_report(sample_recipes, reviews, tmp_path)
+    distribution = pd.read_csv(tmp_path / "rating_distribution.csv")
+
+    assert report["interaction_count"] == 7
+    assert report["valid_rating_count"] == 4
+    assert report["unrated_interaction_count"] == 1
+    assert report["rating_mean"] == 3.25
+    assert report["distinct_interacted_recipes"] == 4
+    assert report["distinct_rated_recipes"] == 3
+    assert set(distribution["rating"]) == {1, 3, 4, 5}
+    assert 0 not in set(distribution["rating"])
 
 
 def test_qualitative_analysis_exports_requested_users_from_training_history(tmp_path):

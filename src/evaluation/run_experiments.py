@@ -35,6 +35,22 @@ def _recommend_content(builder, profile: np.ndarray | None, candidates: pd.DataF
     return candidates.iloc[[row_indices[index] for index in selected]]["RecipeId"].tolist()
 
 
+def _relevant_test_items(
+    test_reviews: pd.DataFrame,
+    catalog_ids: set,
+    seen_ids: set,
+) -> tuple[int, set, set, set, set]:
+    """Retorna positivos, discriminando catálogo, fora do catálogo e itens vistos."""
+    ratings = pd.to_numeric(test_reviews["Rating"], errors="coerce")
+    positive_rows = test_reviews.loc[ratings.between(4, 5)]
+    relevant = set(positive_rows["RecipeId"].dropna().tolist())
+    in_catalog = relevant.intersection(catalog_ids)
+    outside_catalog = relevant - catalog_ids
+    seen_in_train = in_catalog.intersection(seen_ids)
+    eligible = in_catalog - seen_ids
+    return len(positive_rows), in_catalog, outside_catalog, seen_in_train, eligible
+
+
 def run_experiments(
     recipe_path: str | Path | None = None,
     review_path: str | Path | None = None,
@@ -63,42 +79,51 @@ def run_experiments(
 
     dataset_summary = build_dataset_report(recipes, reviews, output_path)
     recipes = prepare_recipe_dataframe(recipes)
-    reviews = reviews.dropna(subset=["AuthorId", "RecipeId", "Rating"]).copy()
+    reviews = reviews.dropna(subset=["AuthorId", "RecipeId"]).copy()
     reviews["Rating"] = pd.to_numeric(reviews["Rating"], errors="coerce")
-    reviews = reviews.dropna(subset=["Rating"])
 
     date_column = "DateSubmitted" if "DateSubmitted" in reviews.columns else None
-    valid_dates = (
-        date_column is not None
-        and pd.to_datetime(
+    valid_dates = False
+    if date_column is not None:
+        has_valid_date = pd.to_datetime(
             reviews[date_column], errors="coerce", utc=True, format="mixed"
-        ).notna().all()
-    )
+        ).notna()
+        valid_dates = bool(
+            reviews.assign(_has_valid_date=has_valid_date)
+            .groupby(["AuthorId", "RecipeId"])["_has_valid_date"]
+            .any()
+            .all()
+        )
+
+    all_user_ids = sorted(reviews["AuthorId"].dropna().unique().tolist())
+    user_ids = all_user_ids
+    unselected_users = 0
+    ineligible_for_sampling = 0
+    sampling_population_size = len(all_user_ids)
+    if max_users is not None:
+        if max_users < 1:
+            raise ValueError("max_users deve ser maior que zero.")
+        training_eligible_ids = reviews.drop_duplicates(["AuthorId", "RecipeId"]).groupby("AuthorId").size()
+        training_eligible_ids = sorted(training_eligible_ids[training_eligible_ids >= min_train_reviews + 1].index.tolist())
+        sampling_population_size = len(training_eligible_ids)
+        ineligible_for_sampling = len(all_user_ids) - sampling_population_size
+        rng = np.random.default_rng(random_state)
+        user_ids = sorted(
+            rng.choice(training_eligible_ids, size=min(max_users, len(training_eligible_ids)), replace=False).tolist()
+        )
+        unselected_users = sampling_population_size - len(user_ids)
+    sample_path = output_path / "selected_users.csv"
+    pd.DataFrame({"user_id": user_ids}).to_csv(sample_path, index=False)
+    selected_reviews = reviews[reviews["AuthorId"].isin(user_ids)]
     train_reviews, test_reviews = split_reviews_by_user(
-        reviews,
+        selected_reviews,
         test_fraction=test_fraction,
         random_state=random_state,
         date_column=date_column,
         min_train_reviews=min_train_reviews,
     )
-
-    all_user_ids = sorted(reviews["AuthorId"].dropna().unique().tolist())
-    user_ids = all_user_ids
-    unselected_users = 0
-    if max_users is not None:
-        if max_users < 1:
-            raise ValueError("max_users deve ser maior que zero.")
-        training_eligible_ids = reviews.groupby("AuthorId").size()
-        training_eligible_ids = sorted(training_eligible_ids[training_eligible_ids >= min_train_reviews + 1].index.tolist())
-        rng = np.random.default_rng(random_state)
-        user_ids = sorted(
-            rng.choice(training_eligible_ids, size=min(max_users, len(training_eligible_ids)), replace=False).tolist()
-        )
-        unselected_users = len(all_user_ids) - len(user_ids)
-    selected_train = train_reviews[train_reviews["AuthorId"].isin(user_ids)]
-    selected_test = test_reviews[test_reviews["AuthorId"].isin(user_ids)]
-    train_by_user = {user_id: group for user_id, group in selected_train.groupby("AuthorId", sort=False)}
-    test_by_user = {user_id: group for user_id, group in selected_test.groupby("AuthorId", sort=False)}
+    train_by_user = {user_id: group for user_id, group in train_reviews.groupby("AuthorId", sort=False)}
+    test_by_user = {user_id: group for user_id, group in test_reviews.groupby("AuthorId", sort=False)}
 
     builder = build_tfidf_matrix(recipes, max_features=5000)
     outputs: list[dict[str, Any]] = []
@@ -109,37 +134,57 @@ def run_experiments(
     for user_id in user_ids:
         user_train = train_by_user.get(user_id, reviews.iloc[:0])
         user_test = test_by_user.get(user_id, reviews.iloc[:0])
+        seen_ids = set(user_train["RecipeId"].dropna().tolist())
         if user_test.empty:
             train_only_count += 1
             exclusion_reason = (
                 "insufficient_training_history"
-                if len(user_train) < min_train_reviews + 1
+                if user_train["RecipeId"].nunique() < min_train_reviews + 1
                 else "no_test_split"
             )
             for model in ("RecipeMatch-TF-IDF", "Aleatório", "Popularidade"):
-                result = evaluate_user_recommendations(user_id, test_reviews, [], k=top_n)
+                result = evaluate_user_recommendations(
+                    user_id,
+                    test_reviews,
+                    [],
+                    k=top_n,
+                    relevant_items=[],
+                )
                 result.update({
                     "evaluated": False,
                     "exclusion_reason": exclusion_reason,
                     "model": model,
                     "n_train_reviews": int(len(user_train)),
-                    "eligible_candidates": int(recipes["RecipeId"].nunique() - user_train["RecipeId"].nunique()),
+                    "eligible_candidates": int(len(catalog_ids - seen_ids)),
+                    "n_test_relevant_evaluations": 0,
+                    "n_relevant_catalog_recipes": 0,
+                    "n_relevant_out_of_catalog": 0,
+                    "n_relevant_excluded_seen_train": 0,
+                    "n_test_relevant_candidates": 0,
                 })
                 outputs.append(result)
             continue
 
-        relevant = set(user_test.loc[user_test["Rating"] >= 4, "RecipeId"].tolist())
+        (
+            relevant_evaluation_count,
+            relevant_in_catalog,
+            relevant_out_of_catalog,
+            relevant_seen_in_train,
+            relevant_candidates,
+        ) = _relevant_test_items(user_test, catalog_ids, seen_ids)
         profile, _ = build_user_profile(user_train, recipes, builder)
-        seen_ids = set(user_train["RecipeId"].dropna().tolist())
         candidates = recipes[~recipes["RecipeId"].isin(seen_ids)]
-        relevant_candidates = relevant.intersection(set(candidates["RecipeId"].tolist()))
 
         if profile is None:
-            reason = "no_informative_profile"
+            reason = (
+                "no_relevant_items"
+                if not relevant_candidates
+                else "no_informative_profile"
+            )
             content_recommendations: list = []
         else:
             reason = None
-            if relevant:
+            if relevant_candidates:
                 seen_by_all_evaluable_users = (
                     seen_ids
                     if seen_by_all_evaluable_users is None
@@ -170,6 +215,7 @@ def run_experiments(
                 test_reviews,
                 recommendation_list,
                 k=top_n,
+                relevant_items=relevant_candidates,
             )
             if reason:
                 result["evaluated"] = False
@@ -178,6 +224,10 @@ def run_experiments(
             result["model"] = model
             result["n_train_reviews"] = int(len(user_train))
             result["eligible_candidates"] = int(len(candidates))
+            result["n_test_relevant_evaluations"] = relevant_evaluation_count
+            result["n_relevant_catalog_recipes"] = len(relevant_in_catalog)
+            result["n_relevant_out_of_catalog"] = len(relevant_out_of_catalog)
+            result["n_relevant_excluded_seen_train"] = len(relevant_seen_in_train)
             result["n_test_relevant_candidates"] = len(relevant_candidates)
             outputs.append(result)
 
@@ -211,23 +261,49 @@ def run_experiments(
         "min_train_reviews": min_train_reviews,
         "top_n": top_n,
         "max_users": max_users,
-        "user_sampling": "seeded random sample from distinct user IDs" if max_users is not None else "all distinct user IDs",
+        "user_sampling": (
+            "seeded random sample from users with enough distinct user-recipe pairs"
+            if max_users is not None
+            else "all distinct user IDs"
+        ),
         "users_selected": len(user_ids),
         "user_population_size": len(all_user_ids),
+        "sampling_population_size": sampling_population_size,
         "users_not_in_sample": unselected_users,
+        "users_ineligible_for_sampling": ineligible_for_sampling,
+        "selected_users_file": str(sample_path),
         "evaluation_date_column": date_column,
         "chronological_split": bool(valid_dates),
         "relevance_threshold": 4,
+        "relevance_definition": "valid rating from 4 to 5; catalog item not seen in training",
         "rating_values": sorted(reviews["Rating"].dropna().unique().tolist()),
         "tfidf_max_features": 5000,
         "models": ["RecipeMatch-TF-IDF", "Aleatório", "Popularidade"],
         "coverage_denominator": "união das receitas candidatas elegíveis nos usuários avaliáveis, após excluir itens vistos no treino",
         "users_without_test_split": train_only_count,
     }
+    evaluated_user_count = (
+        int(by_user.loc[by_user.get("evaluated", pd.Series(dtype=bool)), "user_id"].nunique())
+        if not by_user.empty
+        else 0
+    )
+    exclusion_reasons = (
+        by_user.loc[~by_user["evaluated"].fillna(False)]
+        .drop_duplicates("user_id")
+        .get("exclusion_reason", pd.Series(dtype=object))
+        .value_counts()
+        .to_dict()
+        if not by_user.empty
+        else {}
+    )
     dataset_summary.update({
         "train_review_count": int(len(train_reviews)),
         "test_review_count": int(len(test_reviews)),
-        "users_evaluated": int(by_user.loc[by_user.get("evaluated", pd.Series(dtype=bool)), "user_id"].nunique()) if not by_user.empty else 0,
+        "users_selected": int(len(user_ids)),
+        "users_evaluated": evaluated_user_count,
+        "users_excluded": int(len(user_ids) - evaluated_user_count),
+        "user_exclusion_reasons": exclusion_reasons,
+        "selected_users_file": str(sample_path),
         "users_excluded_no_relevant_items": int(
             by_user.loc[by_user.get("exclusion_reason", pd.Series(dtype=object)) == "no_relevant_items", "user_id"].nunique()
         ) if not by_user.empty else 0,

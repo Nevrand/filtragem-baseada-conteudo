@@ -11,8 +11,8 @@ catálogo por similaridade de cosseno.
 
 Recomendação por conteúdo personaliza a lista usando características das receitas do
 histórico individual. Recomendação por popularidade, usada como baseline, ordena os
-itens pelo número de avaliações no conjunto de treinamento e não personaliza por
-preferências textuais.
+itens pelo número de avaliações válidas por estrelas (1 a 5) no conjunto de
+treinamento e não personaliza por preferências textuais.
 
 ## Objetivo
 
@@ -33,18 +33,22 @@ O projeto espera o dataset [Food.com Recipes and Reviews no Kaggle](https://www.
 - `data/raw/reviews.parquet`: avaliações, com `ReviewId`, `RecipeId`, `AuthorId`,
   `Rating`, `Review` e `DateSubmitted` (além de campos de autor e data de modificação).
 
-Receitas fornecem os textos e atributos usados no TF-IDF. Avaliações ligam usuários
-às receitas e fornecem as notas para construir perfis e o holdout offline. O dataset
-observado possui notas de 0 a 5; a nota 0 é tratada como a avaliação mais negativa
-no perfil. Os Parquet não são versionados por seu tamanho; obtenha-os no Kaggle e
+Receitas fornecem os textos e atributos usados no TF-IDF. Cada linha de avaliações
+representa uma interação usuário-receita; somente ratings de 1 a 5 são avaliações
+por estrelas. No Food.com, rating 0 significa interação sem avaliação por estrelas,
+não uma nota negativa. Essas interações são mantidas para identificar receitas já
+visitadas, mas não entram em perfis, médias, distribuições de notas ou contagens do
+baseline de avaliações. Os Parquet não são versionados; obtenha-os no Kaggle e
 coloque-os em `data/raw/`.
 
 O comando `dataset_report.py` recalcula esses valores a partir dos arquivos locais.
-Na execução real local de 11/11/2026, o relatório calculou 522.517 receitas,
-1.401.982 avaliações, 271.907 usuários distintos e 271.678 receitas avaliadas.
-Foram encontradas 520.298 receitas com ingredientes. As notas observadas variaram
-de 0 a 5, com média 4,40795. Esses números descrevem somente os Parquet disponíveis
-nessa execução e podem mudar em outra versão do dataset.
+No relatório local executado em 12/11/2026, foram encontradas 522.517 receitas,
+1.401.982 interações, 1.325.734 avaliações válidas e 76.248 interações com rating 0.
+Havia 271.907 usuários distintos e 271.678 receitas com interação; 265.816 receitas
+tinham pelo menos uma avaliação válida. A média das notas válidas foi 4,66147 e
+520.298 receitas tinham ingredientes. `dataset_summary.json` separa essas contagens;
+a média e a distribuição incluem somente notas de 1 a 5. Os valores podem variar
+conforme a versão dos Parquet.
 
 ## Como as recomendações são geradas
 
@@ -68,7 +72,7 @@ Uma soma nula ou um histórico apenas neutro não gera perfil artificial.
 
 ## Perfil do usuário
 
-Os pesos implementados são:
+Os pesos das avaliações válidas são:
 
 | Nota | Peso | Interpretação |
 |---:|---:|---|
@@ -77,11 +81,12 @@ Os pesos implementados são:
 | 3 | 0 | neutra |
 | 2 | -1 | negativa |
 | 1 | -2 | negativa forte |
-| 0 | -2 | valor presente no arquivo observado; tratado como menor nota |
 
-Avaliações repetidas do mesmo usuário para a mesma receita são agregadas pela média
-antes de aplicar o peso. Isso evita que uma receita repetida conte várias vezes; uma
-média igual a 3 não contribui ao perfil.
+Uma interação com rating 0 não tem peso no perfil. Avaliações válidas repetidas do
+mesmo usuário para a mesma receita são agregadas pela média antes de aplicar o peso;
+ratings inválidos também não entram nessa média. A interação permanece no histórico
+para excluir a receita das recomendações. Uma média igual a 3 não contribui ao
+perfil. Médias do histórico usam somente ratings válidos de 1 a 5.
 
 ## Filtros
 
@@ -108,13 +113,23 @@ antes de executar o comando no dataset local.
 
 ## Avaliação
 
-O protocolo separa eventos por usuário. Se todas as datas forem válidas, as avaliações
-mais recentes ficam no teste; caso contrário, usa divisão aleatória por usuário com
-semente fixa. Usuários precisam ter avaliações suficientes no treino para formar um
-perfil. O perfil usa exclusivamente o treino; receitas vistas no treino são removidas
-das candidatas, enquanto as receitas do teste permanecem elegíveis. Uma avaliação
-4 ou 5 no teste define item relevante. Usuários sem positivos no teste ou sem perfil
-informativo aparecem nos resultados individuais com o motivo e não entram nas médias.
+Antes da divisão, o avaliador consolida interações repetidas do mesmo par
+`AuthorId`–`RecipeId`: a nota consolidada é a média das notas válidas de 1 a 5; se
+não existir nenhuma nota válida, preserva 0 quando houver interação sem avaliação por
+estrelas. A linha com data mais recente representa os demais campos. Pares, e não
+eventos individuais, são separados por usuário. Quando cada par possui ao menos uma
+data válida, usa-se a interação válida mais recente do par e os pares cronologicamente
+mais recentes ficam no teste; caso contrário, usa divisão aleatória reprodutível por
+usuário. Assim, um par nunca aparece nos dois conjuntos.
+
+O perfil e o baseline de popularidade usam exclusivamente o treino. Todas as
+interações do treino, inclusive rating 0, excluem receitas já vistas. O conjunto
+relevante do teste contém somente receitas com nota válida de 4 ou 5, presentes no
+catálogo e ainda não vistas no treino. Positivos fora do catálogo e já vistos são
+contabilizados separadamente, mas não entram no denominador do Recall. Os três
+modelos recebem as mesmas candidatas e o mesmo conjunto relevante. Usuários sem
+relevantes elegíveis ou sem perfil informativo aparecem nos resultados com o motivo
+de exclusão e não entram nas médias.
 
 Métricas:
 
@@ -123,10 +138,10 @@ Métricas:
   itens relevantes no teste.
 - **nDCG@K:** ganho binário descontado pelo logaritmo da posição, normalizado pelo
   ranking ideal.
-- **Coverage:** receitas distintas recomendadas divididas pelo total de receitas
+- **Coverage:** fração de receitas distintas recomendadas dividida pelo total de receitas
   elegíveis, definido como a união das candidatas dos usuários avaliáveis após
-  excluir receitas vistas no treino; esse denominador é exportado em
-  `metrics_summary.csv`.
+  excluir receitas vistas no treino. O CSV apresenta `coverage` como fração entre 0
+  e 1, e exporta seu denominador em `total_eligible_items`.
 
 ## Experimentos e resultados
 
@@ -135,26 +150,41 @@ popularidade calculada exclusivamente nas avaliações de treino. Todos recebem 
 mesmos usuários e, para cada usuário, as mesmas candidatas após a exclusão do
 histórico de treino.
 
-| Modelo | Precision@5 | Recall@5 | nDCG@5 | Precision@10 | Recall@10 | nDCG@10 | Coverage (%) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| RecipeMatch-TF-IDF | 0 | 0 | 0 | 0 | 0 | 0 | 0,0191 |
-| Aleatório | 0 | 0 | 0 | 0 | 0 | 0 | 0,0191 |
-| Popularidade | 0 | 0 | 0 | 0 | 0 | 0 | 0,0021 |
+Uma amostra não representa automaticamente o dataset completo. Experimentos novos
+devem ser identificados pelo tamanho da amostra. A execução real com 100 usuários,
+semente 42, divisão cronológica e Top-10 selecionou 100 IDs; 83 foram avaliados e
+17 excluídos (14 sem itens relevantes elegíveis e 3 sem perfil informativo). Os
+resultados médios observados foram:
 
-Esta execução piloto real usou 10 usuários amostrados com semente 42, divisão
-cronológica, e Top-10; todos os três modelos tiveram métricas de ranking iguais a
-zero nesta amostra. Coverage é mostrada como percentual. O resultado é limitado e
-não representa desempenho no dataset completo. Para reproduzi-lo:
+| Modelo | Precision@5 | Recall@5 | nDCG@5 | Precision@10 | Recall@10 | nDCG@10 | Coverage (fração) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| RecipeMatch-TF-IDF | 0 | 0 | 0 | 0 | 0 | 0 | 0,001525 |
+| Aleatório | 0 | 0 | 0 | 0 | 0 | 0 | 0,001588 |
+| Popularidade | 0,004819 | 0,012195 | 0,011688 | 0,006024 | 0,032275 | 0,017641 | 0,000031 |
+
+O denominador de coverage foi 522.517 receitas elegíveis. Estes resultados são
+somente dessa amostra; não representam automaticamente o desempenho no dataset
+completo. `--max-users` seleciona usuários reprodutivelmente sem usar os
+resultados das recomendações. A lista de IDs é salva em `selected_users.csv`, e os
+arquivos de configuração e resultados registram usuários selecionados, avaliados e
+excluídos, além dos motivos de exclusão. Use o mesmo `--random-state` para reproduzir
+uma amostra e tamanhos diferentes para comparar escalas:
 
 ```shell
-python -m src.evaluation.run_experiments --max-users 10 --random-state 42 --top-n 10 --output-dir results/sample
+python -m src.evaluation.run_experiments --max-users 100 --random-state 42 --top-n 10 --output-dir results/report
 ```
 
-`--max-users` permite uma amostra aleatória reprodutível para testes rápidos. Sem
-esse parâmetro, o módulo processa todos os usuários; resultados amostrados não devem
-ser apresentados como avaliação do dataset completo.
+Quando os recursos disponíveis permitirem, compare também uma amostra de 500:
 
-A interface permite selecionar todos os usuários com pelo menos 50 avaliações;
+```shell
+python -m src.evaluation.run_experiments --max-users 500 --random-state 42 --top-n 10 --output-dir results/sample/500-users
+```
+
+Sem `--max-users`, o módulo processa todos os usuários; a execução completa não é
+substituída automaticamente por uma amostra. Experimentos amostrais devem ser
+identificados como amostras e não como desempenho no dataset completo.
+
+A interface permite selecionar todos os usuários com pelo menos 50 interações;
 esse critério é exibido no aplicativo e evita limitar a demonstração aos primeiros
 IDs do dataset.
 
@@ -167,6 +197,29 @@ recomendações, pontuações, explicações e se itens relevantes do holdout fi
 do Top-N. Limitações são derivadas desses resultados observados e exportadas em
 `results/qualitative_examples.csv`.
 
+## Tipos de testes realizados
+
+- **Testes unitários:** verificam funções isoladas, incluindo ponderação das
+  avaliações, construção do perfil, conversão de tempo, filtros, similaridade,
+  métricas e explicações.
+- **Testes de integração:** verificam o fluxo entre carregamento de dados, preparação
+  textual, TF-IDF, perfil, recomendação e exportação dos resultados.
+- **Experimentos offline:** medem a recuperação de receitas avaliadas positivamente
+  no holdout, usando a divisão por usuário-receita, os baselines aleatório e de
+  popularidade e as métricas descritas acima. Eles avaliam desempenho, não são testes
+  automatizados.
+- **Análise qualitativa:** inspeciona exemplos reais de usuários, seus históricos,
+  recomendações e explicações.
+
+Testes automatizados aprovados não significam que o algoritmo tenha bom desempenho
+offline. Quantidade de testes e cobertura devem ser informadas somente após executar
+os comandos de teste; resultados de experimentos dependem de execução real com os
+Parquet disponíveis.
+
+Na validação local de 12/11/2026, a suíte teve **43 testes aprovados** e cobertura
+total de **81% em `src`** (`pytest-cov`). Esses valores descrevem os testes
+automatizados, não a qualidade das recomendações.
+
 ## Limitações
 
 - Perfis personalizados dependem de avaliações informativas no conjunto de treino.
@@ -174,8 +227,12 @@ do Top-N. Limitações são derivadas desses resultados observados e exportadas 
 - Receitas sem tempo verificável são excluídas se o filtro de tempo for usado.
 - A qualidade das recomendações depende da qualidade dos textos e ingredientes do
   dataset.
-- A avaliação completa percorre o catálogo por usuário e pode ser demorada; use
-  `--max-users` apenas para uma amostra explicitamente identificada.
+- A avaliação completa percorre o catálogo por usuário e pode ser demorada; amostras
+  de 100 e 500 usuários são alternativas reprodutíveis, mas não substituem a execução
+  completa nem representam automaticamente todo o dataset.
+- A amostra de 100 usuários foi executada; a amostra de 500 e a análise qualitativa
+  completa não foram executadas nesta validação devido ao custo de processar o
+  catálogo integral.
 - Não declare qualidade subjetiva a partir apenas das métricas offline; a análise
   qualitativa auxilia a inspeção, mas não substitui avaliação com usuários.
 
@@ -225,11 +282,6 @@ Ativar ambiente virtual:
 .\.venv\Scripts\Activate.ps1
 ```
 
-```shell
-# Linux/macOS
-source .venv/bin/activate
-```
-
 Instalar dependências e preparar os Parquet em `data/raw/` conforme a seção anterior:
 
 ```shell
@@ -238,7 +290,7 @@ python -m pip install -r requirements.txt
 
 ## Comandos para análise e testes
 
-Verificar os dados:
+Verificar os dados e exportar o relatório:
 
 ```shell
 python -m src.analysis.dataset_report
@@ -251,7 +303,7 @@ python -m pytest -v
 python -m pytest --cov=src --cov-report=term-missing
 ```
 
-Executar experimentos completos:
+Executar o experimento completo:
 
 ```shell
 python -m src.evaluation.run_experiments
@@ -263,16 +315,23 @@ Executar experimento com parâmetros:
 python -m src.evaluation.run_experiments --test-fraction 0.2 --random-state 42 --top-n 10
 ```
 
-Teste rápido com uma amostra reprodutível de usuários:
+Executar a amostra recomendada de 100 usuários (não representa todo o dataset):
 
 ```shell
-python -m src.evaluation.run_experiments --max-users 100 --output-dir results/sample
+python -m src.evaluation.run_experiments --max-users 100 --random-state 42 --top-n 10 --output-dir results/report
+```
+
+Comparar com uma amostra de 500 usuários, se houver recursos suficientes:
+
+```shell
+python -m src.evaluation.run_experiments --max-users 500 --random-state 42 --top-n 10 --output-dir results/sample/500-users
 ```
 
 Gerar análise qualitativa automaticamente ou para IDs existentes:
 
 ```shell
 python -m src.evaluation.qualitative_analysis
+python -m src.evaluation.qualitative_analysis --output results/report/qualitative_examples.csv
 python -m src.evaluation.qualitative_analysis --users 123 456
 ```
 
@@ -284,8 +343,9 @@ Executar a interface:
 python -m streamlit run app/main.py
 ```
 
-Os relatórios e experimentos geram arquivos CSV/JSON em `results/`, pasta local
-ignorada pelo Git.
+Arquivos locais em `results/` são ignorados por padrão. Somente arquivos finais
+selecionados em `results/report/` são permitidos no Git; os Parquet nunca devem ser
+versionados.
 
 ## Estrutura do projeto
 
@@ -294,7 +354,9 @@ app/
   main.py                         Interface Streamlit
 data/
   raw/                            Parquet local (não versionado)
-results/                          CSV/JSON locais (não versionados)
+results/
+  sample/                         Resultados e arquivos locais ignorados pelo Git
+  report/                         Resultados finais selecionados e versionáveis
 src/
   analysis/
     dataset_report.py             Estatísticas descritivas do dataset

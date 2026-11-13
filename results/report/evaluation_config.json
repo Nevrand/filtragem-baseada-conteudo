@@ -1,0 +1,36 @@
+{
+  "recipe_path": "data/raw/recipes.parquet",
+  "review_path": "data/raw/reviews.parquet",
+  "test_fraction": 0.2,
+  "random_state": 42,
+  "min_train_reviews": 1,
+  "top_n": 10,
+  "max_users": 100,
+  "user_sampling": "seeded random sample from users with enough distinct user-recipe pairs",
+  "users_selected": 100,
+  "user_population_size": 271907,
+  "sampling_population_size": 72099,
+  "users_not_in_sample": 71999,
+  "users_ineligible_for_sampling": 199808,
+  "selected_users_file": "results\\report\\selected_users.csv",
+  "evaluation_date_column": "DateSubmitted",
+  "chronological_split": true,
+  "relevance_threshold": 4,
+  "relevance_definition": "valid rating from 4 to 5; catalog item not seen in training",
+  "rating_values": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "tfidf_max_features": 5000,
+  "models": [
+    "RecipeMatch-TF-IDF",
+    "Aleatório",
+    "Popularidade"
+  ],
+  "coverage_denominator": "união das receitas candidatas elegíveis nos usuários avaliáveis, após excluir itens vistos no treino",
+  "users_without_test_split": 0
+}

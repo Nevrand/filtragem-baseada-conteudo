@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import ceil
 
+import numpy as np
 import pandas as pd
 
 
@@ -14,11 +15,14 @@ def split_reviews_by_user(
     date_column: str | None = "DateSubmitted",
     min_train_reviews: int = 1,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Separa eventos por usuário, priorizando holdout cronológico.
+    """Separa pares usuário-receita, priorizando holdout cronológico.
 
-    A divisão cronológica só é usada quando todos os registros têm uma data válida.
-    Caso contrário, todo o conjunto usa amostragem reprodutível por usuário. Usuários
-    sem pelo menos ``min_train_reviews + 1`` eventos permanecem apenas no treino.
+    A divisão cronológica só é usada quando cada par tem pelo menos uma data válida.
+    Avaliações repetidas de um par são reduzidas a uma única interação: usa-se a
+    média das notas válidas de 1 a 5; se não houver nota válida, preserva-se 0 caso
+    exista uma interação sem nota por estrelas. A linha com data mais recente
+    representa os demais campos do par. Usuários sem pares suficientes permanecem
+    apenas no treino.
     """
     if not 0 < test_fraction < 1:
         raise ValueError("test_fraction deve estar entre 0 e 1.")
@@ -30,12 +34,37 @@ def split_reviews_by_user(
         raise ValueError(f"Colunas obrigatórias ausentes: {user_column!r} e/ou {rating_column!r}.")
 
     working = reviews_df.copy()
-    use_dates = date_column is not None and date_column in working.columns
-    if use_dates:
+    has_date_column = date_column is not None and date_column in working.columns
+    if has_date_column:
         working["_split_date"] = pd.to_datetime(
             working[date_column], errors="coerce", utc=True, format="mixed"
         )
-        use_dates = bool(working["_split_date"].notna().all())
+
+    pair_columns = [user_column, "RecipeId"]
+    if "RecipeId" not in working.columns:
+        raise ValueError("A coluna obrigatória 'RecipeId' está ausente.")
+    working["_input_order"] = range(len(working))
+    working["_numeric_rating"] = pd.to_numeric(working[rating_column], errors="coerce")
+    consolidated_rows = []
+    for _, pair in working.groupby(pair_columns, sort=False, dropna=False):
+        if has_date_column and pair["_split_date"].notna().any():
+            representative = pair.sort_values(
+                "_split_date",
+                kind="mergesort",
+                na_position="first",
+            ).iloc[-1].copy()
+        else:
+            representative = pair.sort_values("_input_order", kind="mergesort").iloc[-1].copy()
+        valid_ratings = pair["_numeric_rating"].where(pair["_numeric_rating"].between(1, 5)).dropna()
+        if not valid_ratings.empty:
+            representative[rating_column] = float(valid_ratings.mean())
+        elif pair["_numeric_rating"].eq(0).any():
+            representative[rating_column] = 0
+        else:
+            representative[rating_column] = np.nan
+        consolidated_rows.append(representative)
+    working = pd.DataFrame(consolidated_rows).reset_index(drop=True)
+    use_dates = has_date_column and bool(working["_split_date"].notna().all())
 
     train_frames: list[pd.DataFrame] = []
     test_frames: list[pd.DataFrame] = []
@@ -65,7 +94,8 @@ def split_reviews_by_user(
 
     train = pd.concat(train_frames, ignore_index=True) if train_frames else working.iloc[:0].copy()
     test = pd.concat(test_frames, ignore_index=True) if test_frames else working.iloc[:0].copy()
-    return train.drop(columns=["_split_date"], errors="ignore"), test.drop(columns=["_split_date"], errors="ignore")
+    temporary_columns = ["_split_date", "_input_order", "_numeric_rating"]
+    return train.drop(columns=temporary_columns, errors="ignore"), test.drop(columns=temporary_columns, errors="ignore")
 
 
 __all__ = ["split_reviews_by_user"]

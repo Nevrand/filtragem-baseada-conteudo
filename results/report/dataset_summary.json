@@ -1,0 +1,100 @@
+{
+  "recipe_count": 522517,
+  "interaction_count": 1401982,
+  "review_count": 1401982,
+  "valid_rating_count": 1325734,
+  "unrated_interaction_count": 76248,
+  "invalid_rating_count": 0,
+  "distinct_users": 271907,
+  "distinct_interacted_recipes": 271678,
+  "distinct_rated_recipes": 265816,
+  "rating_min": 1.0,
+  "rating_max": 5.0,
+  "rating_mean": 4.661469042809493,
+  "rating_distribution": {
+    "1": 16559,
+    "2": 17597,
+    "3": 50279,
+    "4": 229217,
+    "5": 1012082
+  },
+  "reviews_per_user": {
+    "minimum": 1,
+    "median": 1.0,
+    "mean": 5.156108522399203,
+    "maximum": 8842
+  },
+  "reviews_per_recipe": {
+    "minimum": 1,
+    "median": 2.0,
+    "mean": 5.160454655879387,
+    "maximum": 2892
+  },
+  "recipes_with_ingredients": 520298,
+  "recipe_time_minutes": {
+    "source_column": "TotalTime",
+    "known_count": 522517,
+    "missing_or_invalid_count": 0,
+    "minimum_minutes": 0.0,
+    "median_minutes": 40.0,
+    "mean_minutes": 254.50135593674463,
+    "p90_minutes": 135.0,
+    "maximum_minutes": 43552800.0
+  },
+  "columns_present": {
+    "recipes": [
+      "RecipeId",
+      "Name",
+      "AuthorId",
+      "AuthorName",
+      "CookTime",
+      "PrepTime",
+      "TotalTime",
+      "DatePublished",
+      "Description",
+      "Images",
+      "RecipeCategory",
+      "Keywords",
+      "RecipeIngredientQuantities",
+      "RecipeIngredientParts",
+      "AggregatedRating",
+      "ReviewCount",
+      "Calories",
+      "FatContent",
+      "SaturatedFatContent",
+      "CholesterolContent",
+      "SodiumContent",
+      "CarbohydrateContent",
+      "FiberContent",
+      "SugarContent",
+      "ProteinContent",
+      "RecipeServings",
+      "RecipeYield",
+      "RecipeInstructions"
+    ],
+    "reviews": [
+      "ReviewId",
+      "RecipeId",
+      "AuthorId",
+      "AuthorName",
+      "Rating",
+      "Review",
+      "DateSubmitted",
+      "DateModified"
+    ]
+  },
+  "train_review_count": 1908,
+  "test_review_count": 532,
+  "users_selected": 100,
+  "users_evaluated": 83,
+  "users_excluded": 17,
+  "user_exclusion_reasons": {
+    "no_relevant_items": 14,
+    "no_informative_profile": 3
+  },
+  "selected_users_file": "results\\report\\selected_users.csv",
+  "users_excluded_no_relevant_items": 14,
+  "users_excluded_no_profile": 3,
+  "users_without_test_split": 0,
+  "eligible_catalog_size": 522517
+}

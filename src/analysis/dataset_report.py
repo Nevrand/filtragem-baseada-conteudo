@@ -26,7 +26,9 @@ def build_dataset_report(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    ratings = pd.to_numeric(reviews["Rating"], errors="coerce").dropna()
+    all_ratings = pd.to_numeric(reviews["Rating"], errors="coerce")
+    valid_ratings = all_ratings[all_ratings.between(1, 5)]
+    unrated_interactions = all_ratings.eq(0)
     user_counts = reviews.groupby("AuthorId", dropna=True).size()
     recipe_counts = reviews.groupby("RecipeId", dropna=True).size()
     ingredients_column = "RecipeIngredientParts"
@@ -53,8 +55,8 @@ def build_dataset_report(
     missing_values = pd.DataFrame(missing_rows)
     missing_values.to_csv(output_path / "dataset_missing_values.csv", index=False)
 
-    rating_distribution = ratings.value_counts().sort_index().rename_axis("rating").reset_index(name="count")
-    rating_distribution["fraction"] = rating_distribution["count"] / max(len(ratings), 1)
+    rating_distribution = valid_ratings.value_counts().sort_index().rename_axis("rating").reset_index(name="count")
+    rating_distribution["fraction"] = rating_distribution["count"] / max(len(valid_ratings), 1)
     rating_distribution.to_csv(output_path / "rating_distribution.csv", index=False)
 
     if "RecipeCategory" in recipes.columns:
@@ -87,13 +89,23 @@ def build_dataset_report(
 
     summary = {
         "recipe_count": int(recipes["RecipeId"].nunique()) if "RecipeId" in recipes.columns else int(len(recipes)),
+        "interaction_count": int(len(reviews)),
         "review_count": int(len(reviews)),
+        "valid_rating_count": int(len(valid_ratings)),
+        "unrated_interaction_count": int(unrated_interactions.sum()),
+        "invalid_rating_count": int((all_ratings.notna() & ~all_ratings.between(1, 5) & ~unrated_interactions).sum()),
         "distinct_users": int(reviews["AuthorId"].nunique()),
-        "distinct_rated_recipes": int(reviews["RecipeId"].nunique()),
-        "rating_min": float(ratings.min()) if not ratings.empty else None,
-        "rating_max": float(ratings.max()) if not ratings.empty else None,
-        "rating_mean": float(ratings.mean()) if not ratings.empty else None,
-        "rating_distribution": {str(key): int(value) for key, value in ratings.value_counts().sort_index().items()},
+        "distinct_interacted_recipes": int(reviews["RecipeId"].nunique()),
+        "distinct_rated_recipes": int(
+            reviews.loc[all_ratings.between(1, 5), "RecipeId"].nunique()
+        ),
+        "rating_min": float(valid_ratings.min()) if not valid_ratings.empty else None,
+        "rating_max": float(valid_ratings.max()) if not valid_ratings.empty else None,
+        "rating_mean": float(valid_ratings.mean()) if not valid_ratings.empty else None,
+        "rating_distribution": {
+            str(key): int(value)
+            for key, value in valid_ratings.value_counts().sort_index().items()
+        },
         "reviews_per_user": {
             "minimum": int(user_counts.min()) if not user_counts.empty else 0,
             "median": float(user_counts.median()) if not user_counts.empty else 0.0,

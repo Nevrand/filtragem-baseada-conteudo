@@ -1,0 +1,4 @@
+precision@5,recall@5,ndcg@5,precision@10,recall@10,ndcg@10,coverage,total_eligible_items,evaluated_users,excluded_users,users_considered,mean_test_reviews_per_user,mean_recommendations_per_user,excluded_reasons,model,users_without_test_split
+0.0,0.0,0.0,0.0,0.0,0.0,0.0015253092243888715,522517,83,17,100,6.192771084337349,10.0,"{'no_relevant_items': 14, 'no_informative_profile': 3}",RecipeMatch-TF-IDF,0
+0.0,0.0,0.0,0.0,0.0,0.0,0.0015884650642945589,522517,83,17,100,6.192771084337349,10.0,"{'no_relevant_items': 14, 'no_informative_profile': 3}",Aleatório,0
+0.004819277108433735,0.012195121951219513,0.011687830829458718,0.006024096385542169,0.03227544323636007,0.017641241778873686,3.062101328760595e-05,522517,83,17,100,6.192771084337349,10.0,"{'no_relevant_items': 14, 'no_informative_profile': 3}",Popularidade,0

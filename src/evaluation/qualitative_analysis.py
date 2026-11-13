@@ -15,7 +15,8 @@ from src.recommendation.recommender import RecipeRecommender
 
 
 def _format_history(reviews: pd.DataFrame, recipes: pd.DataFrame, positive: bool) -> str:
-    threshold = reviews["Rating"] >= 4 if positive else reviews["Rating"] <= 2
+    ratings = pd.to_numeric(reviews["Rating"], errors="coerce")
+    threshold = ratings.between(4, 5) if positive else ratings.between(1, 2)
     selected = reviews[threshold].merge(
         recipes[["RecipeId", "Name", "RecipeIngredientParts"]],
         on="RecipeId",
@@ -62,7 +63,10 @@ def run_qualitative_analysis(
     )
     if users is None:
         enough_training = set(train_reviews.groupby("AuthorId").size().loc[lambda counts: counts >= 2].index)
-        positive_test_users = set(test_reviews.loc[test_reviews["Rating"] >= 4, "AuthorId"].unique())
+        test_ratings = pd.to_numeric(test_reviews["Rating"], errors="coerce")
+        positive_test_users = set(
+            test_reviews.loc[test_ratings.between(4, 5), "AuthorId"].unique()
+        )
         eligible_users = sorted(enough_training.intersection(positive_test_users))
         sampled_users = pd.Series(eligible_users).sample(
             n=min(3, len(eligible_users)),
@@ -102,7 +106,15 @@ def run_qualitative_analysis(
             )
             recommendation_frame = recommender.compute_scores(profile, candidates, top_n=top_n)
 
-        relevant_test_ids = set(user_test.loc[user_test["Rating"] >= 4, "RecipeId"])
+        test_ratings = pd.to_numeric(user_test["Rating"], errors="coerce")
+        relevant_test_ids = set(
+            user_test.loc[
+                test_ratings.between(4, 5)
+                & user_test["RecipeId"].isin(set(recipes["RecipeId"]))
+                & ~user_test["RecipeId"].isin(set(user_train["RecipeId"])),
+                "RecipeId",
+            ]
+        )
         recommended_ids = set(recommendation_frame["RecipeId"]) if not recommendation_frame.empty else set()
         missed = relevant_test_ids - recommended_ids
         if recommendation_frame.empty:
@@ -114,11 +126,17 @@ def run_qualitative_analysis(
 
         positive_history = _format_history(user_train, recipes, positive=True)
         negative_history = _format_history(user_train, recipes, positive=False)
-        mean_rating = float(user_train["Rating"].mean()) if not user_train.empty else None
+        train_ratings = pd.to_numeric(user_train["Rating"], errors="coerce")
+        valid_train_ratings = train_ratings[train_ratings.between(1, 5)]
+        mean_rating = float(valid_train_ratings.mean()) if not valid_train_ratings.empty else None
+        valid_rating_count = int(len(valid_train_ratings))
+        unrated_interaction_count = int(train_ratings.eq(0).sum())
         if recommendation_frame.empty:
             output_rows.append({
                 "user_id": user_id,
                 "train_review_count": len(user_train),
+                "valid_train_rating_count": valid_rating_count,
+                "unrated_train_interaction_count": unrated_interaction_count,
                 "mean_train_rating": mean_rating,
                 "positive_history": positive_history,
                 "negative_history": negative_history,
@@ -137,6 +155,8 @@ def run_qualitative_analysis(
             output_rows.append({
                 "user_id": user_id,
                 "train_review_count": len(user_train),
+                "valid_train_rating_count": valid_rating_count,
+                "unrated_train_interaction_count": unrated_interaction_count,
                 "mean_train_rating": mean_rating,
                 "positive_history": positive_history,
                 "negative_history": negative_history,

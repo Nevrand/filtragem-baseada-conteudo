@@ -25,12 +25,20 @@ def evaluate_user_recommendations(
     user_column: str = "AuthorId",
     recipe_column: str = "RecipeId",
     rating_column: str = "Rating",
+    relevant_items: Iterable | None = None,
 ) -> dict:
-    """Calcula métricas @5/@10; a lista recebida precisa ter até ``k`` itens."""
+    """Calcula métricas @5/@10 usando o conjunto relevante elegível fornecido."""
     user_test = test_reviews[test_reviews[user_column] == user_id]
-    relevant = set(
-        user_test.loc[user_test[rating_column] >= relevance_threshold, recipe_column].dropna().tolist()
-    )
+    if relevant_items is None:
+        ratings = pd.to_numeric(user_test[rating_column], errors="coerce")
+        relevant = set(
+            user_test.loc[
+                ratings.between(relevance_threshold, 5),
+                recipe_column,
+            ].dropna().tolist()
+        )
+    else:
+        relevant = set(relevant_items)
     recommendations = list(recommended)[:max(k, 10)]
     has_test = not user_test.empty
     has_relevant = bool(relevant)

@@ -12,4 +12,13 @@ env/
 *.log
 /data/raw/recipes.parquet
 /data/raw/reviews.parquet
-/results/
+/results/*
+!/results/report/
+/results/report/*
+!/results/report/metrics_summary.csv
+!/results/report/metrics_by_user.csv
+!/results/report/evaluation_config.json
+!/results/report/dataset_summary.json
+!/results/report/rating_distribution.csv
+!/results/report/qualitative_examples.csv
+!/results/report/selected_users.csv

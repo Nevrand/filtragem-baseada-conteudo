@@ -36,13 +36,17 @@ def popularity_recommendation(
     top_n: int = 5,
     train_reviews: pd.DataFrame | None = None,
 ) -> list:
-    """Recomenda as candidatas com mais avaliações no conjunto recebido (treino)."""
+    """Recomenda candidatas com mais notas válidas de 1 a 5 no treino."""
     if reviews_df.empty:
         return []
     eligible = _exclude_seen(recipes_df, train_reviews)
     if eligible.empty:
         return []
-    counts = reviews_df.groupby("RecipeId", dropna=True).size().rename("popularity")
+    if "Rating" not in reviews_df.columns:
+        raise ValueError("A coluna 'Rating' é necessária para contar avaliações por estrelas.")
+    ratings = pd.to_numeric(reviews_df["Rating"], errors="coerce")
+    valid_reviews = reviews_df.loc[ratings.between(1, 5)]
+    counts = valid_reviews.groupby("RecipeId", dropna=True).size().rename("popularity")
     scores = eligible[["RecipeId"]].copy()
     scores["popularity"] = scores["RecipeId"].map(counts).fillna(0)
     return scores.sort_values(["popularity", "RecipeId"], ascending=[False, True])["RecipeId"].head(top_n).tolist()
