@@ -95,6 +95,11 @@ def test_duration_conversion():
     assert parse_duration_to_minutes("45 minutes") == 45
     assert parse_duration_to_minutes("P1DT2H") == 1560
     assert parse_duration_to_minutes("PT45S") == 0.75
+    assert parse_duration_to_minutes("PT725880H") == 43_552_800
+    assert parse_duration_to_minutes("PT0S") == 0
+    assert parse_duration_to_minutes("P83Y") is None
+    assert parse_duration_to_minutes("P2W") is None
+    assert parse_duration_to_minutes("P2M") is None
     assert parse_duration_to_minutes(None) is None
 
 

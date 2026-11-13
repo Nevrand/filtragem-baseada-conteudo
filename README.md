@@ -50,6 +50,20 @@ tinham pelo menos uma avaliação válida. A média das notas válidas foi 4,661
 a média e a distribuição incluem somente notas de 1 a 5. Os valores podem variar
 conforme a versão dos Parquet.
 
+Na mesma versão, `TotalTime` foi convertido para minutos em 522.517 registros:
+mediana 40, média 254,50, percentil 95 de 260 e percentil 99 de 1.440 minutos.
+Há 2.129 valores `PT0S` e 5.065 durações acima de 24 horas. O máximo é o valor
+original `PT725880H` da receita 50088 (“Caroline Cogswell's Celebrated Morning
+Tonic (A Coffee Liqueur)”), convertido corretamente para 43.552.800 minutos
+(725.880 horas). Esse extremo parece anômalo para uma duração de preparo, mas foi
+preservado; durações longas também podem refletir maturação/espera de receitas.
+O diagnóstico detalhado fica em
+`results/diagnostics/final_audit_2026-11-12/duration_outliers.csv` e
+`results/diagnostics/final_audit_2026-11-12/duration_summary.json`. O conversor não
+filtra valores extremos; unidades ISO sem conversão fixa para minutos (anos, meses
+e semanas), não presentes nesse Parquet, são reportadas como não reconhecidas em vez
+de serem tratadas como minutos.
+
 ## Como as recomendações são geradas
 
 1. Os textos são normalizados e consolidados; ingredientes são mantidos como

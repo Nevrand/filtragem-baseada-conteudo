@@ -80,10 +80,12 @@ def coerce_ingredient_list(value) -> List[str]:
 
 
 def parse_duration_to_minutes(value) -> float | None:
-    """Converte duração ISO 8601 ou texto simples em minutos.
+    """Converte durações ISO compatíveis ou texto simples em minutos.
 
     Durações ausentes/inválidas retornam ``None``. Segundos são preservados como
     frações de minuto e durações ISO com dias (por exemplo, ``P1DT2H``) são aceitas.
+    Unidades ISO não suportadas (como anos, meses e semanas) não são inferidas como
+    minutos, pois não têm conversão fixa para minutos sem contexto adicional.
     """
     if value is None or _is_missing_scalar(value):
         return None
@@ -111,6 +113,9 @@ def parse_duration_to_minutes(value) -> float | None:
             + float(parts["minutes"] or 0)
             + float(parts["seconds"] or 0) / 60
         )
+
+    if text.startswith("P"):
+        return None
 
     if re.search(r"\d", text):
         values = re.findall(r"(\d+(?:\.\d+)?)", text)
