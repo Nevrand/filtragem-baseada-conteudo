@@ -18,6 +18,7 @@ from src.features.user_profile import build_user_profile
 
 
 def _recommend_content(builder, profile: np.ndarray | None, candidates: pd.DataFrame, top_n: int) -> list:
+    """Seleciona as candidatas com maior compatibilidade com o perfil."""
     if profile is None or candidates.empty:
         return []
     positions = [
@@ -319,6 +320,7 @@ def run_experiments(
 
 
 def main() -> None:
+    """Lê os argumentos da linha de comando e executa a avaliação."""
     parser = argparse.ArgumentParser(description="Executa os experimentos offline do RecipeMatch.")
     parser.add_argument("--recipes", type=Path, help="Caminho para recipes.parquet.")
     parser.add_argument("--reviews", type=Path, help="Caminho para reviews.parquet.")

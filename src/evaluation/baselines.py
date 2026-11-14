@@ -5,6 +5,7 @@ import pandas as pd
 
 
 def _exclude_seen(candidates: pd.DataFrame, train_reviews: pd.DataFrame | None) -> pd.DataFrame:
+    """Retira das candidatas as receitas presentes no histórico de treino."""
     if train_reviews is None or train_reviews.empty:
         return candidates
     seen = set(train_reviews["RecipeId"].dropna())

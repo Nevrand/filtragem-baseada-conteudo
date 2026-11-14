@@ -15,6 +15,7 @@ from src.recommendation.recommender import RecipeRecommender
 
 
 def _format_history(reviews: pd.DataFrame, recipes: pd.DataFrame, positive: bool) -> str:
+    """Formata em JSON as receitas positivas ou negativas do histórico."""
     ratings = pd.to_numeric(reviews["Rating"], errors="coerce")
     threshold = ratings.between(4, 5) if positive else ratings.between(1, 2)
     selected = reviews[threshold].merge(
@@ -177,6 +178,7 @@ def run_qualitative_analysis(
 
 
 def main() -> None:
+    """Lê os argumentos da linha de comando e gera exemplos qualitativos."""
     parser = argparse.ArgumentParser(description="Gera exemplos qualitativos do RecipeMatch.")
     parser.add_argument("--users", nargs="+", type=int, help="IDs de dois ou três usuários.")
     parser.add_argument("--recipes", type=Path)

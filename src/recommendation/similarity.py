@@ -5,6 +5,7 @@ from scipy import sparse
 
 
 def _as_2d_array(values):
+    """Converte valores numéricos em uma matriz com duas dimensões."""
     arr = np.asarray(values, dtype=float)
     if arr.ndim == 1:
         arr = arr.reshape(1, -1)

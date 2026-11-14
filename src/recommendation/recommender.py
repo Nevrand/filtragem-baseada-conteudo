@@ -27,11 +27,13 @@ class RecipeRecommender:
     _active_profile: np.ndarray | None = None
 
     def _ensure_user_ratings(self) -> pd.DataFrame:
+        """Seleciona o histórico do usuário associado ao recomendador."""
         if self.reviews_df.empty:
             return pd.DataFrame(columns=["RecipeId", "AuthorId", "Rating"])
         return self.reviews_df[self.reviews_df["AuthorId"] == self.user_id].copy() if self.user_id is not None else self.reviews_df.head(0).copy()
 
     def _prepare_candidates(self, max_minutes: float | int | None = None, avoided_ingredients: Sequence[str] | None = None, available_ingredients: Sequence[str] | None = None) -> pd.DataFrame:
+        """Prepara receitas candidatas aplicando o histórico e os filtros."""
         candidates = self.recipes_df.copy()
         user_ratings = self._ensure_user_ratings()
         return filter_candidates(

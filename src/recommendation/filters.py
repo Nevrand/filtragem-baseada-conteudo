@@ -17,6 +17,7 @@ def _ingredient_terms(value) -> list[tuple[str, ...]]:
 
 
 def _contains_ingredient(ingredients, query_terms: set[tuple[str, ...]]) -> bool:
+    """Verifica se algum ingrediente contém todos os termos da busca em sequência."""
     for ingredient in _ingredient_terms(ingredients):
         for query in query_terms:
             if not query:
@@ -28,6 +29,7 @@ def _contains_ingredient(ingredients, query_terms: set[tuple[str, ...]]) -> bool
 
 
 def _query_terms(values: Sequence[str] | None) -> set[tuple[str, ...]]:
+    """Normaliza as buscas de ingredientes em sequências de palavras."""
     return {
         tuple(normalized.split())
         for value in (values or [])
@@ -56,6 +58,7 @@ def filter_by_avoid_ingredients(candidate_df: pd.DataFrame, prohibited_ingredien
         return candidate_df.copy()
 
     def has_forbidden(row):
+        """Indica se a receita contém algum ingrediente proibido."""
         return _contains_ingredient(row.get(ingredient_column, []), forbidden)
 
     return candidate_df[~candidate_df.apply(has_forbidden, axis=1)].copy()
@@ -71,6 +74,7 @@ def filter_by_time(candidate_df: pd.DataFrame, max_minutes: float | int | None, 
         return candidate_df.copy()
 
     def safe_minutes(row):
+        """Obtém a duração da receita usando apenas valores verificáveis."""
         minutes = parse_duration_to_minutes(row.get(time_column)) if time_column in row.index else None
         if minutes is None and {"PrepTime", "CookTime"}.issubset(row.index):
             prep = parse_duration_to_minutes(row.get("PrepTime"))
@@ -96,6 +100,7 @@ def filter_by_available_ingredients(candidate_df: pd.DataFrame, available_ingred
         return candidate_df.copy()
 
     def contains_any(row):
+        """Indica se a receita contém algum ingrediente disponível."""
         return _contains_ingredient(row.get(ingredient_column, []), wanted)
 
     return candidate_df[candidate_df.apply(contains_any, axis=1)].copy()

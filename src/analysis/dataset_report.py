@@ -129,6 +129,7 @@ def build_dataset_report(
 
 
 def main() -> None:
+    """Carrega os Parquet, gera o relatório descritivo e o exibe."""
     parser = argparse.ArgumentParser(description="Gera um relatório estatístico do dataset Food.com.")
     parser.add_argument("--recipes", type=Path, help="Caminho para recipes.parquet.")
     parser.add_argument("--reviews", type=Path, help="Caminho para reviews.parquet.")

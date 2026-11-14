@@ -70,6 +70,7 @@ st.divider()
 # ── Funções cacheadas (idênticas ao main.py) ─────────────────────────────────
 @st.cache_data(show_spinner="Carregando e preparando o dataset...")
 def load_project_data(recipe_path: str, review_path: str, recipe_mtime: int, review_mtime: int):
+    """Carrega os Parquet e prepara os campos textuais das receitas."""
     del recipe_mtime, review_mtime
     recipes, reviews = load_datasets(
         recipe_path=recipe_path,
@@ -112,6 +113,7 @@ def load_text_model(
     recipe_size: int,
     review_size: int,
 ):
+    """Constrói o modelo TF-IDF reutilizável para o catálogo carregado."""
     del recipe_size, review_size
     recipes, _ = load_project_data(
         recipe_path,

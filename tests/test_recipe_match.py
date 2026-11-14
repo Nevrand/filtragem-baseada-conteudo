@@ -7,7 +7,7 @@ import pytest
 
 from src.analysis.dataset_report import build_dataset_report
 from src.data.load_data import load_datasets
-from src.data.preprocess import build_recipe_text, coerce_ingredient_list, normalize_text, parse_duration_to_minutes, prepare_recipe_dataframe
+from src.data.preprocess import normalize_text, parse_duration_to_minutes, prepare_recipe_dataframe
 from src.evaluation.baselines import popularity_recommendation, random_recommendation
 from src.evaluation.evaluate import evaluate_user_recommendations, summarize_user_results
 from src.evaluation.metrics import catalog_coverage, ndcg_at_k, precision_at_k, recall_at_k
@@ -354,7 +354,6 @@ def test_invalid_dates_fall_back_to_reproducible_random_split():
 
 
 def test_metric_values_at_five_and_ten_are_exact():
-    relevant = {1, 3, 5}
     recommendations = [3, 8, 1, 9, 5, 10, 11, 12, 13, 14]
     result = evaluate_user_recommendations(
         7,
@@ -500,7 +499,7 @@ def test_explanation_terms_have_positive_tfidf_profile_contributions():
     assert contributions[builder.feature_names.index("tomato")] > 0
 
 
-def test_mmr_reorders_similar_items_and_returns_more_than_five(sample_recipes):
+def test_mmr_reorders_similar_items_and_returns_more_than_five():
     recipes = pd.DataFrame({
         "RecipeId": [1, 2, 3, 4, 5, 6, 7],
         "combined_text": [

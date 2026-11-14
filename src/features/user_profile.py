@@ -48,6 +48,7 @@ def build_user_profile(
     ] = 0.0
 
     def weight_for_rating(rating: float) -> float:
+        """Converte uma nota válida em peso positivo, neutro ou negativo."""
         if pd.isna(rating) or not 1 <= rating <= 5 or rating == 3:
             return 0.0
         if rating >= positive_threshold:

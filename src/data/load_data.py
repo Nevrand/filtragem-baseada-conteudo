@@ -12,6 +12,7 @@ DEFAULT_REVIEW_PATH = ROOT_DIR / "data" / "raw" / "reviews.parquet"
 
 
 def _resolve_path(path: str | Path | None, default: Path) -> Path:
+    """Resolve um caminho relativo a partir da raiz do projeto."""
     if path is None:
         return default
     candidate = Path(path)
@@ -19,12 +20,14 @@ def _resolve_path(path: str | Path | None, default: Path) -> Path:
 
 
 def _validate_columns(frame: pd.DataFrame, required: Iterable[str]) -> None:
+    """Garante que as colunas obrigatórias estejam presentes."""
     missing = [column for column in required if column not in frame.columns]
     if missing:
         raise ValueError(f"Colunas obrigatórias ausentes: {missing}. Colunas disponíveis: {list(frame.columns)}")
 
 
 def _available_columns(path: Path, requested: tuple[str, ...] | None) -> list[str] | None:
+    """Retorna somente as colunas solicitadas que existem no Parquet."""
     if requested is None:
         return None
     import pyarrow.parquet as parquet
@@ -88,7 +91,7 @@ def load_datasets(
 
 
 def load_recipe_data(path: str | Path | None = None, required_columns: Sequence[str] | None = None) -> pd.DataFrame:
-    """Carrega apenas receitas e valida colunas essenciais."""
+    """Carrega receitas e verifica se possuem as colunas necessárias."""
     dataset_path = _resolve_path(path, DEFAULT_RECIPE_PATH)
     if not dataset_path.exists():
         print(f"Arquivo de receitas não encontrado: {dataset_path}")
@@ -101,7 +104,7 @@ def load_recipe_data(path: str | Path | None = None, required_columns: Sequence[
 
 
 def load_review_data(path: str | Path | None = None, required_columns: Sequence[str] | None = None) -> pd.DataFrame:
-    """Carrega apenas avaliações e valida colunas essenciais."""
+    """Carrega avaliações e verifica se possuem as colunas necessárias."""
     dataset_path = _resolve_path(path, DEFAULT_REVIEW_PATH)
     if not dataset_path.exists():
         print(f"Arquivo de avaliações não encontrado: {dataset_path}")
@@ -114,7 +117,7 @@ def load_review_data(path: str | Path | None = None, required_columns: Sequence[
 
 
 def check_dataset_integrity(recipes: pd.DataFrame, reviews: pd.DataFrame) -> dict:
-    """Retorna resumo rápido sobre duplicatas, dados ausentes e tamanho das tabelas."""
+    """Resume o tamanho, as duplicatas e os valores ausentes dos dados."""
     summary = {
         "recipes_rows": len(recipes),
         "reviews_rows": len(reviews),
