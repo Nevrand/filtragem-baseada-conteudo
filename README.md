@@ -283,10 +283,6 @@ tests/                Testes automatizados
 - **Geovanna** — Relatório e apresentação
 - **Thercio** — Frontend
 
-## Demonstração
-
-[Adicionar link do vídeo de demonstração]
-
 ## Referências
 
 - Food.com Recipes and Reviews — Kaggle:
