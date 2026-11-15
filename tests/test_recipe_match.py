@@ -7,7 +7,7 @@ import pytest
 
 from src.analysis.dataset_report import build_dataset_report
 from src.data.load_data import load_datasets
-from src.data.preprocess import normalize_text, parse_duration_to_minutes, prepare_recipe_dataframe
+from src.data.preprocess import normalize_text, parse_duration_to_minutes, prepare_recipe_dataframe, remove_stopwords_from_text
 from src.evaluation.baselines import popularity_recommendation, random_recommendation
 from src.evaluation.evaluate import evaluate_user_recommendations, summarize_user_results
 from src.evaluation.metrics import catalog_coverage, ndcg_at_k, precision_at_k, recall_at_k
@@ -88,6 +88,14 @@ def test_normalize_text_handles_parquet_arrays_and_missing_values():
     assert normalize_text(np.array(["Fresh tomato", "olive oil"])) == "fresh tomato olive oil"
     assert normalize_text(np.array(["tomato", None], dtype=object)) == "tomato"
     assert normalize_text(np.nan) == ""
+    assert normalize_text("NÃO") == "nao"
+
+
+def test_text_cleaning_removes_english_and_portuguese_stopwords_and_stems_english():
+    assert remove_stopwords_from_text("The tomatoes are with garlic") == "tomato garlic"
+    assert remove_stopwords_from_text("A receita com feijão e arroz") == "feijao arroz"
+    assert remove_stopwords_from_text("") == ""
+    assert remove_stopwords_from_text(normalize_text(pd.NA)) == ""
 
 
 def test_duration_conversion():

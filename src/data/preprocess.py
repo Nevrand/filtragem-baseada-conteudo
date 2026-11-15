@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+from functools import lru_cache
 from typing import Iterable, List, Sequence
 
 import numpy as np
 import pandas as pd
+from nltk.stem.snowball import SnowballStemmer
 
+# Palavras funcionais em inglês e português; termos de ingredientes são preservados.
 DEFAULT_STOPWORDS = {
     "a", "an", "the", "and", "or", "but", "if", "then", "else", "for", "of", "to", "in", "on",
     "with", "by", "as", "at", "from", "it", "is", "be", "are", "was", "were", "this", "that",
@@ -15,12 +19,26 @@ DEFAULT_STOPWORDS = {
     "should", "may", "might", "can", "make", "made", "using", "use", "recipe", "recipes", "ingredients",
     "ingredient", "dish", "food", "fresh", "cup", "cups", "tablespoon", "tablespoons", "teaspoon",
     "teaspoons", "minute", "minutes", "hour", "hours", "day", "days", "mix", "stir", "bake", "cook",
-    "cooked", "serving", "servings"
+    "cooked", "serving", "servings", "ao", "aos", "aquela", "aquele", "aquelas", "aqueles",
+    "ate", "com", "como", "da", "das", "de", "dela", "dele", "do", "dos", "e", "ela", "elas",
+    "ele", "eles", "em", "entre", "essa", "essas", "esse", "esses", "esta", "estas", "este",
+    "estes", "eu", "foi", "isso", "isto", "ja", "lhe", "mais", "mas", "me", "mesmo", "meu",
+    "minha", "muito", "na", "nas", "nao", "nem", "no", "nos", "nossa", "nosso", "num", "numa",
+    "o", "os", "ou", "para", "pela", "pelas", "pelo", "pelos", "por", "qual", "quando", "que",
+    "quem", "se", "sem", "ser", "seu", "sua", "tambem", "te", "tem", "tendo", "tenho", "ter",
+    "um", "uma", "voce", "voces", "receita", "receitas", "ingrediente", "ingredientes",
 }
+
+ENGLISH_STEMMER = SnowballStemmer("english")
+
+
+@lru_cache(maxsize=131072)
+def _stem_english_token(token: str) -> str:
+    return ENGLISH_STEMMER.stem(token)
 
 
 def normalize_text(value) -> str:
-    """Normaliza texto em minúsculas, remove pontuação excessiva e tokens vazios."""
+    """Normaliza caixa, acentos, pontuação e espaços do texto."""
     if value is None:
         return ""
     if isinstance(value, np.ndarray):
@@ -30,6 +48,7 @@ def normalize_text(value) -> str:
     elif _is_missing_scalar(value):
         return ""
     text = str(value).lower().strip()
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     text = text.replace("&", " and ")
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text)
@@ -51,11 +70,11 @@ def clean_text_series(series: pd.Series, remove_stopwords: bool = True) -> pd.Se
 
 
 def remove_stopwords_from_text(text: str, stopwords: Iterable[str] | None = None) -> str:
-    """Remove stopwords em português e inglês, mantendo termos úteis para recomendação."""
-    tokens = re.findall(r"[a-z0-9]+", str(text).lower())
+    """Remove stopwords em português e inglês e aplica stemming Snowball em inglês."""
+    tokens = re.findall(r"[a-z0-9]+", normalize_text(text))
     stop = set(stopwords) if stopwords is not None else DEFAULT_STOPWORDS
     filtered = [token for token in tokens if token not in stop and len(token) > 1]
-    return " ".join(filtered)
+    return " ".join(_stem_english_token(token) for token in filtered)
 
 
 def coerce_ingredient_list(value) -> List[str]:
@@ -134,6 +153,14 @@ def parse_duration_to_minutes(value) -> float | None:
     return None
 
 
+def _normalize_recipe_field(value, field: str) -> str:
+    if field in {"Keywords", "RecipeIngredientParts"} and isinstance(value, (list, tuple, set)):
+        value = " ".join(str(item) for item in value)
+    if field == "RecipeIngredientParts" and isinstance(value, str):
+        value = value.replace("[", " ").replace("]", " ")
+    return normalize_text(value)
+
+
 def build_recipe_text(row: pd.Series, fields: Sequence[str] | None = None) -> str:
     """Combina campos textuais relevantes para a representação TF-IDF da receita."""
     selected = fields or ["Name", "Description", "RecipeCategory", "Keywords", "RecipeIngredientParts"]
@@ -141,14 +168,7 @@ def build_recipe_text(row: pd.Series, fields: Sequence[str] | None = None) -> st
     for field in selected:
         if field not in row.index:
             continue
-        value = row[field]
-        if field == "Keywords" and isinstance(value, (list, tuple, set)):
-            value = " ".join(str(item) for item in value)
-        if field == "RecipeIngredientParts" and isinstance(value, (list, tuple, set)):
-            value = " ".join(str(item) for item in value)
-        if field == "RecipeIngredientParts" and isinstance(value, str):
-            value = value.replace("[", " ").replace("]", " ")
-        text_parts.append(normalize_text(value))
+        text_parts.append(_normalize_recipe_field(row[field], field))
     return " ".join(part for part in text_parts if part)
 
 
@@ -168,14 +188,27 @@ def prepare_recipe_dataframe(
             output[column] = output[column].fillna("")
 
     if ingredient_column in output.columns:
-        output[ingredient_column] = output[ingredient_column].apply(lambda value: [normalize_text(item) for item in coerce_ingredient_list(value)])
+        output[ingredient_column] = output[ingredient_column].apply(coerce_ingredient_list)
 
     if drop_duplicates:
         output = output.drop_duplicates(subset=["RecipeId"], keep="first") if "RecipeId" in output.columns else output.drop_duplicates()
 
     text_fields = list(text_fields or ["Name", "Description", "RecipeCategory", "Keywords", "RecipeIngredientParts"])
-    output["combined_text"] = output.apply(lambda row: build_recipe_text(row, text_fields), axis=1)
-    output["combined_text"] = output["combined_text"].apply(remove_stopwords_from_text)
+    normalized_columns = [
+        output[field].map(lambda value: _normalize_recipe_field(value, field))
+        for field in text_fields
+        if field in output.columns
+    ]
+    if normalized_columns:
+        combined_text = (
+            " ".join(part for part in row if part)
+            for row in zip(*normalized_columns)
+        )
+        output["combined_text"] = [
+            remove_stopwords_from_text(text) for text in combined_text
+        ]
+    else:
+        output["combined_text"] = pd.Series("", index=output.index, dtype=object)
     return output
 
 

@@ -39,6 +39,13 @@ altas e baixas influenciam o perfil em sentidos diferentes; uma nota neutra ou u
 interação sem nota não acrescenta preferência por estrelas. A opção MMR pode
 reordenar o resultado para equilibrar compatibilidade e diversidade.
 
+Antes da vetorização, o pré-processamento normaliza acentos, remove stopwords em
+português e inglês e aplica stemming Snowball em inglês. A amostra analisada do
+catálogo é predominantemente em inglês; a lista em português também atende textos
+nesse idioma. O stemmer do NLTK não exige baixar corpora adicionais. Essa etapa altera
+os termos textuais usados no TF-IDF, mas não muda a construção do perfil nem os
+cálculos dos scores.
+
 ## Dados utilizados
 
 O projeto usa o conjunto
@@ -92,8 +99,8 @@ Python 3.10 ou mais recente.
 
 5. Baixe o dataset na página do
    [Food.com Recipes and Reviews no Kaggle](https://www.kaggle.com/datasets/irkaal/foodcom-recipes-and-reviews).
-   Depois de extrair o conteúdo, coloque os dois arquivos Parquet na pasta
-   `data/raw/` e confira os nomes:
+   O conjunto disponibiliza os arquivos Parquet diretamente; não é necessário
+   convertê-los. Coloque os dois arquivos na pasta `data/raw/` e confira os nomes:
 
    ```text
    data/raw/recipes.parquet
@@ -123,6 +130,13 @@ Python 3.10 ou mais recente.
 6. Selecione **Gerar recomendações**.
 7. Consulte as receitas, a posição no ranking e as explicações apresentadas.
 
+## Notebook exploratório
+
+O notebook [notebooks/exploratory_analysis.ipynb](notebooks/exploratory_analysis.ipynb)
+resume dimensões, valores ausentes, duplicidades e distribuição de ratings, além de
+gerar gráficos de interações por usuário, categorias, ingredientes e tempo de preparo.
+As amostras usadas nos gráficos são reprodutíveis e não alteram os dados originais.
+
 ## Avaliação dos resultados
 
 Os experimentos comparam o RecipeMatch com dois métodos de referência: seleção
@@ -141,21 +155,29 @@ datas válidas; nos demais casos, a divisão aleatória é reprodutível.
 - **nDCG@5 e nDCG@10** também consideram a posição dos itens relevantes.
 - **Coverage** informa a fração do catálogo elegível que apareceu nas listas.
 
-Uma avaliação registrada em `results/report/` usou uma amostra de 100 usuários,
-semente 42, divisão cronológica e Top-10. Foram avaliados 83 usuários; 17 foram
-excluídos das médias por não terem itens relevantes elegíveis ou perfil informativo.
-Os resultados abaixo são dessa amostra, não uma estimativa do desempenho de todos os
-usuários:
+As duas execuções abaixo usam a mesma amostra de 100 usuários, semente 42, divisão
+cronológica e Top-10. Em ambas, 83 usuários foram avaliados e 17 foram excluídos das
+médias: 14 não tinham itens relevantes elegíveis no teste e 3 não tinham perfil
+informativo. A execução com stemming está em
+`results/report/preprocessing-snowball-2026-11-14/`; a pasta `results/report/`
+mantém os resultados históricos.
 
-| Método | Precision@5 | Recall@5 | nDCG@5 | Precision@10 | Recall@10 | nDCG@10 | Coverage |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| RecipeMatch-TF-IDF | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,001525 |
-| Aleatório | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,001588 |
-| Popularidade | 0,004819 | 0,012195 | 0,011688 | 0,006024 | 0,032275 | 0,017641 | 0,000031 |
+| Método | P@5 | R@5 | nDCG@5 | P@10 | R@10 | nDCG@10 | Coverage histórico | Coverage com stemming |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| RecipeMatch-TF-IDF | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,001525 | 0,001539 |
+| Aleatório | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,001588 | 0,001588 |
+| Popularidade | 0,004819 | 0,012195 | 0,011688 | 0,006024 | 0,032275 | 0,017641 | 0,000031 | 0,000031 |
 
-Esses valores são os resultados já registrados nos arquivos de relatório; não foram
-recalculados durante esta atualização. Para executar novamente uma amostra de 100
-usuários sem sobrescrever o relatório existente:
+O stemming não alterou a recuperação de itens relevantes pelo RecipeMatch no Top-10:
+P@5, R@5, nDCG@5, P@10, R@10 e nDCG@10 permaneceram em zero nesta amostra. A
+coverage do modelo de conteúdo mudou de 0,001525 para 0,001539, enquanto os baselines
+permaneceram iguais. O resultado sugere que normalizar formas de palavras, por si só,
+não resolveu a recuperação neste holdout. Um vocabulário de conteúdo limitado, a
+diferença entre as receitas do histórico e as do teste e o tamanho do catálogo são
+hipóteses plausíveis, mas esta avaliação não demonstra a causa. Os valores descrevem
+somente a amostra e não são uma estimativa para todos os usuários.
+
+Para repetir a avaliação com stemming sem sobrescrever os relatórios existentes:
 
 ```powershell
 python -m src.evaluation.run_experiments --max-users 100 --random-state 42 --top-n 10 --output-dir results/reproduction-100-users
@@ -185,7 +207,7 @@ python -m src.evaluation.qualitative_analysis --output results/reproduction-qual
 ```text
 app/                  Interface Streamlit
 data/raw/             Arquivos Parquet obtidos localmente
-notebooks/            Espaço para análises em notebook
+notebooks/            Notebook de análise exploratória
 results/              Relatórios e resultados de avaliação
 src/analysis/         Resumo descritivo dos dados
 src/data/             Leitura e preparação dos dados
@@ -203,6 +225,8 @@ tests/                Testes automatizados
 - **scikit-learn:** representação textual TF-IDF;
 - **SciPy:** operações com matrizes esparsas;
 - **PyArrow:** leitura dos arquivos Parquet;
+- **NLTK:** stemming Snowball em inglês;
+- **Matplotlib e IPython:** gráficos e execução do notebook exploratório;
 - **pytest e pytest-cov:** testes e medição de cobertura.
 
 ## Limitações
@@ -222,6 +246,10 @@ tests/                Testes automatizados
 - **Geovanna** — Relatório e apresentação
 - **Thercio** — Frontend
 
+## Demonstração
+
+[Adicionar link do vídeo de demonstração]
+
 ## Referências
 
 - Food.com Recipes and Reviews — Kaggle:
@@ -231,5 +259,7 @@ tests/                Testes automatizados
 - NumPy: <https://numpy.org/>
 - scikit-learn: <https://scikit-learn.org/>
 - SciPy: <https://scipy.org/>
+- NLTK: <https://www.nltk.org/>
+- Matplotlib: <https://matplotlib.org/>
 - Streamlit: <https://streamlit.io/>
 - PyArrow: <https://arrow.apache.org/docs/python/>

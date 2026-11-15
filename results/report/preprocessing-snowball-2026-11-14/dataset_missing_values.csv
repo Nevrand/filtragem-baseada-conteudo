@@ -1,0 +1,14 @@
+dataset,column,missing_count,missing_fraction
+recipes,RecipeId,0,0.0
+recipes,Name,0,0.0
+recipes,Description,5,9.569066652376861e-06
+recipes,RecipeCategory,751,0.0014372738111870045
+recipes,Keywords,0,0.0
+recipes,RecipeIngredientParts,0,0.0
+recipes,TotalTime,0,0.0
+reviews,ReviewId,0,0.0
+reviews,RecipeId,0,0.0
+reviews,AuthorId,0,0.0
+reviews,Rating,0,0.0
+reviews,Review,0,0.0
+reviews,DateSubmitted,0,0.0

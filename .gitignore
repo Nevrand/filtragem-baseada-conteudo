@@ -22,3 +22,5 @@ env/
 !/results/report/rating_distribution.csv
 !/results/report/qualitative_examples.csv
 !/results/report/selected_users.csv
+!/results/report/preprocessing-snowball-2026-11-14/
+!/results/report/preprocessing-snowball-2026-11-14/**
