@@ -5,14 +5,11 @@ Projeto acadêmico de recomendação de receitas desenvolvido em Python e Stream
 ## Sobre o projeto
 
 O RecipeMatch foi desenvolvido para a disciplina Oficina de Desenvolvimento de
-Sistemas I. O projeto recomenda receitas de acordo com o histórico individual de
-cada usuário: receitas que ele avaliou ajudam a identificar características de que
-gosta ou não gosta.
+Sistemas I. O objetivo é recomendar receitas com base nas preferências dos usuários.
 
-O sistema compara essas preferências com as informações do catálogo, como nomes,
-descrições, categorias, palavras-chave e ingredientes. A interface também permite
-filtrar resultados e consultar por que uma receita foi recomendada. A personalização
-é baseada no conteúdo das receitas, não nas avaliações de outros usuários.
+Para isso, o sistema analisa receitas que cada pessoa já avaliou e procura outras
+com características semelhantes, como ingredientes, categorias e descrições.
+Também é possível usar filtros e consultar explicações sobre as recomendações.
 
 ## Funcionalidades
 
@@ -25,26 +22,20 @@ filtrar resultados e consultar por que uma receita foi recomendada. A personaliz
 
 ## Como o sistema funciona
 
-1. Carrega as receitas e as interações registradas no conjunto de dados.
-2. Prepara os textos das receitas e combina informações como ingredientes e
-   categorias.
-3. Usa as notas válidas do histórico para identificar preferências individuais.
-4. Compara o perfil do usuário com as receitas que ele ainda não viu.
-5. Aplica os filtros selecionados e ordena as candidatas por compatibilidade.
-6. Exibe as recomendações e os termos que contribuíram para cada resultado.
+1. Carrega as receitas e as avaliações.
+2. Identifica as preferências a partir das avaliações do usuário.
+3. Compara essas preferências com as informações de outras receitas.
+4. Remove receitas que o usuário já conhece.
+5. Aplica os filtros escolhidos.
+6. Mostra as recomendações e suas explicações.
 
-O TF-IDF ajuda a destacar palavras importantes nas informações das receitas. A
-similaridade do cosseno compara os vetores de texto do perfil e das receitas. Notas
-altas e baixas influenciam o perfil em sentidos diferentes; uma nota neutra ou uma
-interação sem nota não acrescenta preferência por estrelas. A opção MMR pode
-reordenar o resultado para equilibrar compatibilidade e diversidade.
+O TF-IDF ajuda a identificar palavras importantes nas receitas. A similaridade do
+cosseno compara as informações das receitas com as preferências do usuário. A opção
+MMR pode reorganizar os resultados para equilibrar compatibilidade e diversidade.
 
-Antes da vetorização, o pré-processamento normaliza acentos, remove stopwords em
-português e inglês e aplica stemming Snowball em inglês. A amostra analisada do
-catálogo é predominantemente em inglês; a lista em português também atende textos
-nesse idioma. O stemmer do NLTK não exige baixar corpora adicionais. Essa etapa altera
-os termos textuais usados no TF-IDF, mas não muda a construção do perfil nem os
-cálculos dos scores.
+Na preparação dos textos, o projeto normaliza acentos, remove palavras comuns em
+português e inglês e aplica stemming Snowball em inglês. Esses passos ajustam os
+termos usados pelo TF-IDF; não alteram a construção do perfil nem os scores.
 
 ## Dados utilizados
 
@@ -67,57 +58,60 @@ podem variar conforme a versão baixada.
 
 ## Como instalar e executar
 
-Execute os comandos a partir da pasta raiz do repositório. É necessário ter Git e
-Python 3.10 ou mais recente.
+Use o Windows PowerShell e execute os comandos a partir da pasta em que deseja
+salvar o projeto. É necessário ter Git e Python 3.10 ou mais recente.
 
-1. Obtenha uma cópia do projeto:
+1. Baixe o repositório:
 
    ```powershell
    git clone https://github.com/Nevrand/filtragem-baseada-conteudo.git
+   ```
+
+2. Entre na pasta do projeto:
+
+   ```powershell
    cd filtragem-baseada-conteudo
    ```
 
-2. Crie um ambiente virtual:
+3. Crie um ambiente virtual:
 
    ```powershell
    python -m venv .venv
    ```
 
-3. Ative o ambiente no Windows PowerShell:
+4. Ative o ambiente virtual:
 
    ```powershell
    .\.venv\Scripts\Activate.ps1
    ```
 
-   No Prompt de Comando do Windows, use `.\.venv\Scripts\activate.bat`.
+   No Prompt de Comando, use `.\.venv\Scripts\activate.bat`.
 
-4. Instale as dependências:
+5. Instale as dependências:
 
    ```powershell
    python -m pip install -r requirements.txt
    ```
 
-5. Baixe o dataset na página do
-   [Food.com Recipes and Reviews no Kaggle](https://www.kaggle.com/datasets/irkaal/foodcom-recipes-and-reviews).
-   O conjunto disponibiliza os arquivos Parquet diretamente; não é necessário
-   convertê-los. Coloque os dois arquivos na pasta `data/raw/` e confira os nomes:
+6. Baixe o conjunto [Food.com Recipes and Reviews no
+   Kaggle](https://www.kaggle.com/datasets/irkaal/foodcom-recipes-and-reviews).
 
-   ```text
-   data/raw/recipes.parquet
-   data/raw/reviews.parquet
+7. Coloque `recipes.parquet` e `reviews.parquet` na pasta `data/raw/`:
+
+   ```powershell
+   New-Item -ItemType Directory -Force data\raw
    ```
 
-   É necessário ter acesso ao Kaggle para baixar o conjunto. Os Parquet são arquivos
-   locais e não são versionados pelo Git.
+   O Kaggle disponibiliza os arquivos Parquet diretamente; não é preciso convertê-los.
+   Os dados são locais e não são incluídos no repositório.
 
-6. Inicie a interface:
+8. Inicie o Streamlit:
 
    ```powershell
    python -m streamlit run app/main.py
    ```
 
-7. Abra no navegador o endereço informado pelo Streamlit, normalmente
-   `http://localhost:8501`.
+   O navegador normalmente abre em `http://localhost:8501`.
 
 ## Como utilizar
 
@@ -133,34 +127,27 @@ Python 3.10 ou mais recente.
 ## Notebook exploratório
 
 O notebook [notebooks/exploratory_analysis.ipynb](notebooks/exploratory_analysis.ipynb)
-resume dimensões, valores ausentes, duplicidades e distribuição de ratings, além de
+resume o tamanho e a qualidade dos dados e a distribuição das notas, além de
 gerar gráficos de interações por usuário, categorias, ingredientes e tempo de preparo.
 As amostras usadas nos gráficos são reprodutíveis e não alteram os dados originais.
 
 ## Avaliação dos resultados
 
-Os experimentos comparam o RecipeMatch com dois métodos de referência: seleção
-aleatória com semente fixa e ordenação por popularidade no conjunto de treino. A
-divisão por usuário separa pares usuário-receita entre treino e teste. O perfil e a
-popularidade usam somente o treino; interações de teste não são usadas para gerar as
-recomendações. São relevantes as receitas do teste com nota válida 4 ou 5 que
-pertençam ao catálogo e não tenham aparecido no treino. O experimento usa semente 42
-por padrão e prefere uma divisão cronológica quando os pares usuário-receita têm
-datas válidas; nos demais casos, a divisão aleatória é reprodutível.
+O RecipeMatch foi comparado com dois métodos de referência: recomendações aleatórias
+e receitas mais populares no conjunto de treino. Para a avaliação, foram consideradas
+relevantes as receitas do teste com nota 4 ou 5 que estão no catálogo e não aparecem
+no treino. A avaliação usa a semente 42 e uma divisão cronológica quando há datas
+válidas; caso contrário, usa uma divisão aleatória reprodutível.
 
-- **Precision@5 e Precision@10** indicam a proporção de itens relevantes nas
-  primeiras cinco ou dez posições.
-- **Recall@5 e Recall@10** indicam quantos dos itens relevantes do teste foram
-  encontrados nessas posições.
-- **nDCG@5 e nDCG@10** também consideram a posição dos itens relevantes.
-- **Coverage** informa a fração do catálogo elegível que apareceu nas listas.
+- **Precision:** quantas recomendações apresentadas eram relevantes.
+- **Recall:** quantas receitas relevantes foram encontradas.
+- **nDCG:** se as receitas relevantes apareceram em boas posições.
+- **Coverage:** quanto do catálogo apareceu nas recomendações.
 
-As duas execuções abaixo usam a mesma amostra de 100 usuários, semente 42, divisão
-cronológica e Top-10. Em ambas, 83 usuários foram avaliados e 17 foram excluídos das
-médias: 14 não tinham itens relevantes elegíveis no teste e 3 não tinham perfil
-informativo. A execução com stemming está em
-`results/report/preprocessing-snowball-2026-11-14/`; a pasta `results/report/`
-mantém os resultados históricos.
+A tabela resume duas execuções com 100 usuários, semente 42 e Top-10. Em cada uma,
+83 usuários entraram nas médias; 17 foram excluídos por não terem itens relevantes
+elegíveis no teste ou um perfil informativo. Os resultados dependem dos usuários
+escolhidos e da separação entre treino e teste.
 
 | Método | P@5 | R@5 | nDCG@5 | P@10 | R@10 | nDCG@10 | Coverage histórico | Coverage com stemming |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -168,39 +155,89 @@ mantém os resultados históricos.
 | Aleatório | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,000000 | 0,001588 | 0,001588 |
 | Popularidade | 0,004819 | 0,012195 | 0,011688 | 0,006024 | 0,032275 | 0,017641 | 0,000031 | 0,000031 |
 
-O stemming não alterou a recuperação de itens relevantes pelo RecipeMatch no Top-10:
-P@5, R@5, nDCG@5, P@10, R@10 e nDCG@10 permaneceram em zero nesta amostra. A
-coverage do modelo de conteúdo mudou de 0,001525 para 0,001539, enquanto os baselines
-permaneceram iguais. O resultado sugere que normalizar formas de palavras, por si só,
-não resolveu a recuperação neste holdout. Um vocabulário de conteúdo limitado, a
-diferença entre as receitas do histórico e as do teste e o tamanho do catálogo são
-hipóteses plausíveis, mas esta avaliação não demonstra a causa. Os valores descrevem
-somente a amostra e não são uma estimativa para todos os usuários.
+Na amostra registrada, as métricas de recuperação do modelo de conteúdo ficaram em
+zero, enquanto o método por popularidade encontrou alguns itens relevantes. Esse
+resultado é mantido como foi medido; ele não representa todos os usuários do conjunto.
 
-Para repetir a avaliação com stemming sem sobrescrever os relatórios existentes:
+## Como testar o projeto
 
-```powershell
-python -m src.evaluation.run_experiments --max-users 100 --random-state 42 --top-n 10 --output-dir results/reproduction-100-users
-```
+Há três maneiras de verificar o projeto:
 
-O programa também aceita uma execução sem `--max-users`, que considera os usuários
-disponíveis e pode levar mais tempo. Os arquivos de saída registram a configuração,
-os usuários selecionados e as métricas por usuário.
+### A. Testes automatizados
 
-## Análise qualitativa
-
-O módulo de análise gera exemplos de até três usuários, com histórico, recomendações,
-explicações e uma indicação de itens relevantes do teste que não apareceram no Top-N.
-Na cópia local analisada, `results/sample/qualitative_examples.csv` registra uma
-amostra de três usuários e 15 recomendações; nenhuma delas coincidiu com um item
-relevante identificado no teste. Esse arquivo local não é versionado e o resultado
-descreve somente a amostra salva.
-
-Para gerar novos exemplos sem substituir esse arquivo:
+Na raiz do repositório, execute:
 
 ```powershell
-python -m src.evaluation.qualitative_analysis --output results/reproduction-qualitative.csv
+python -m pytest -q
 ```
+
+Os testes cobrem carregamento, pré-processamento, perfil do usuário, similaridade,
+recomendações, filtros, MMR, métricas, baselines e avaliação experimental. Eles usam
+dados pequenos e arquivos Parquet temporários, não precisam dos arquivos do Kaggle e
+não executam a avaliação completa com todos os usuários.
+
+### B. Testes rápidos
+
+Para executar os testes rápidos, sem os casos identificados por esses termos nos nomes:
+
+```powershell
+python -m pytest -q -k "not parquet and not dataset_report and not experiment_runner and not qualitative_analysis"
+```
+
+Na revisão atual, esse filtro seleciona 38 dos 44 testes. Ele é uma verificação
+rápida, mas não substitui a suíte completa.
+
+### C. Teste manual da interface
+
+1. Inicie o Streamlit com o comando da seção de instalação.
+2. Selecione um usuário e consulte o histórico.
+3. Configure os filtros e gere recomendações.
+4. Ative MMR e confira a nova ordem, as posições e as explicações.
+
+## Como reproduzir os resultados
+
+Os comandos abaixo devem ser executados na raiz do projeto e precisam dos dois
+arquivos Parquet em `data/raw/`. Cada comando grava arquivos na pasta indicada. Use
+uma pasta nova ou escolha outro nome para não sobrescrever resultados existentes.
+
+### A. Avaliação pequena
+
+```powershell
+python -m src.evaluation.run_experiments --max-users 3 --random-state 42 --top-n 10 --output-dir results/teste-rapido
+```
+
+Esse comando limita a avaliação a três usuários para verificar o fluxo. Ainda precisa
+preparar o catálogo completo e construir o modelo, então o tempo não foi medido e pode
+ser maior que o dos testes rápidos. As métricas dessa amostra não são resultados
+oficiais do trabalho.
+
+### B. Reprodução da amostra do relatório
+
+```powershell
+python -m src.evaluation.run_experiments --max-users 100 --random-state 42 --top-n 10 --output-dir results/reproducao-100
+```
+
+Essa execução avalia 100 usuários e pode demorar significativamente mais por precisar
+preparar o catálogo e gerar recomendações. O tempo não foi medido nesta revisão. As
+métricas e a configuração são salvas em `results/reproducao-100/`.
+
+### C. Relatório dos dados
+
+```powershell
+python -m src.analysis.dataset_report --output-dir results/analise-dados
+```
+
+Gera um resumo estatístico do catálogo e das avaliações em `results/analise-dados/`.
+
+### D. Exemplos qualitativos
+
+```powershell
+python -m src.evaluation.qualitative_analysis --output results/analise-qualitativa.csv
+```
+
+Gera um CSV com históricos, recomendações e explicações de até três usuários. Esse
+comando também prepara o catálogo e o modelo; pode demorar e seu tempo não foi medido
+nesta revisão.
 
 ## Estrutura do projeto
 
