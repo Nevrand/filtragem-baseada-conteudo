@@ -187,6 +187,7 @@ with st.expander("Ver histórico completo", expanded=False):
         lambda value: ", ".join(coerce_ingredient_list(value))
     )
     history["_rating_sort"] = pd.to_numeric(history["Rating"], errors="coerce")
+    history["Rating"] = history["Rating"].astype(object)
     history.loc[history["_rating_sort"].eq(0), "Rating"] = "Sem nota"
     history = history.rename(columns={"Name": "Recipe", "Rating": "Rating"})
     display_columns = ["Recipe", "Rating", "Ingredients"]

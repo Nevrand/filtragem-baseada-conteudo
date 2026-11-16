@@ -279,6 +279,10 @@ tests/                Testes automatizados
 
 ## Integrantes
 
-- **Alexander** — Dados
+- **Alexander** — Sistema e apresentação
 - **Geovanna** — Relatório e apresentação
-- **Thercio** — Frontend
+- **Thercio** — Frontend (main.py)
+
+## Vídeo de demonstração
+
+https://drive.google.com/file/d/19g8tnmhavrM-NBPdDR95xZ7d-9P_3Zcf/view?usp=sharing
